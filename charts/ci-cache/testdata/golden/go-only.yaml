@@ -154,6 +154,14 @@ spec:
         - name: ci-cache
           image: ghcr.io/truvity/ci-cache/ci-cache:0.1.0
           imagePullPolicy: IfNotPresent
+          # The subcommand, and it is NOT optional. ko's entrypoint is the
+          # bare binary, and the bare binary is a CLI with several
+          # subcommands -- run with none it prints its help and exits 0.
+          # Kubernetes reads that as a container that finished, restarts it,
+          # and the pod sits in CrashLoopBackOff having never opened a
+          # socket. That is what 0.1.0 did in the first cluster it reached.
+          args:
+            - serve
           env:
             - name: CI_CACHE_STORE_BUCKET
               value: "ci-cache-example"

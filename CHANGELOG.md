@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
+## [0.1.1] - 2026-09-23
+
+### Fixed
+
+- **The chart rendered a pod that could not run.** No `args`, so ko's
+  entrypoint ran the bare binary, which is a CLI with several subcommands:
+  with none it printed its help, exited 0, and Kubernetes restarted it. The
+  first cluster it reached held it in `CrashLoopBackOff` having never opened
+  a socket. The chart now passes `serve`.
+
+  Every golden had been reviewed and every refusal passed, because the chart
+  harness only asked what the chart must REFUSE. It now also asserts the one
+  thing the rendered container must DO, which is the check that would have
+  caught this before a cluster did.
+
 ## [0.1.0] - 2026-09-23
 
 The first release: the engine, the two Go front-ends, the runner agent, the

@@ -58,6 +58,14 @@ spec:
         - name: ci-cache
           image: {{ include "ci-cache.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The subcommand, and it is NOT optional. ko's entrypoint is the
+          # bare binary, and the bare binary is a CLI with several
+          # subcommands -- run with none it prints its help and exits 0.
+          # Kubernetes reads that as a container that finished, restarts it,
+          # and the pod sits in CrashLoopBackOff having never opened a
+          # socket. That is what 0.1.0 did in the first cluster it reached.
+          args:
+            - serve
           env:
             {{- include "ci-cache.env" . | nindent 12 }}
           {{- with .Values.store.existingSecret }}
