@@ -5,6 +5,55 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
+## [0.1.3] - 2026-09-24
+
+### Fixed
+
+- **The agent waited for the network before answering the compiler.** The
+  toolchain calls `put` once per compiled object and waits for the answer,
+  and the agent was recording that object into the whole chain -- a local
+  tier write and an HTTP round trip to the server -- before replying. One
+  gitops `build` wrote 4.4 GB that way, every byte of it on the critical
+  path, in series.
+
+  This is the measured gap against `go-cache-plugin`, which answers as soon
+  as the object is on local disk and pushes to S3 from a bounded background
+  group. It beat this agent on every recipe -- 139 s against 191 s on build,
+  148 against 242 on lint, 231 against 287 on test -- while talking to a
+  bucket in another datacentre rather than to a server on the same LAN. Its
+  uploads were never on the critical path and ours were.
+
+  The write is now split rather than simply deferred. The local tier is
+  written **before** the answer, because a build asks for things it has just
+  produced and a deferred local write turns those into misses and recompiles.
+  The server and the object store are recorded afterwards, on a bounded pool
+  (`--upload-workers`, or `CI_CACHE_AGENT_UPLOAD_WORKERS`), and waited for
+  once when the toolchain closes the stream.
+
+  That wait is bounded, because a job that appears to finish and then sits
+  there is a job somebody cancels. When it runs out, the objects are still on
+  local disk and the summary line reports `lost=N`: objects that were not
+  recorded for the next build. Deferring the work introduces exactly one way
+  to look faster while doing less, and `lost` is the number that shows it --
+  check it first when a build time improves.
+
+### Added
+
+- **A benchmark harness, `ci-cache-bench`.** CI is the wrong instrument for a
+  performance question: a job takes minutes, conflates compile time with
+  cache time, runs on whichever runner is free, and answers one point on one
+  curve. The harness loads a running server and reports throughput, latency
+  separated into first-byte and complete, and what failed.
+
+  It refuses rather than reports in the three cases that would otherwise
+  produce 0 ms at every percentile and read like the best result it had ever
+  produced: a run that completed no requests, a run where every request
+  failed, and a scenario that could not reach its starting state.
+
+  `docs/bench/0.1.2.md` records the first baseline. It is `warm-disk` only:
+  the admin port has no ingress allowance from any pod, so nothing in the
+  cluster can put the server into a cold-disk state.
+
 ## [0.1.2] - 2026-09-23
 
 ### Fixed
