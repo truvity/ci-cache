@@ -177,8 +177,21 @@ func New(ctx context.Context, opts Options) (*Agent, error) {
 	// The agent has no admin port and nobody to ask, so its disk tier is
 	// kept inside its budget by the same collector the server uses.
 	gcCfg := config.Default().GC
-	if opts.LocalBudget > 0 {
+	switch {
+	case opts.LocalBudget > 0:
 		gcCfg.BudgetBytes = opts.LocalBudget
+	default:
+		// Derived, and from the cgroup rather than from statfs when there is
+		// one: see cgroup.go for why the filesystem is the wrong question
+		// inside a container. Saying which source was used matters -- the
+		// two answers differ by two orders of magnitude, and the symptom of
+		// picking the wrong one is a job that dies with no error.
+		if budget, ok := budgetFromMemoryLimit(); ok {
+			gcCfg.BudgetBytes = budget
+			a.logf("local cache budget %d bytes, derived from the container's memory limit", budget)
+		} else {
+			a.logf("local cache budget derived from the filesystem: no container memory limit found")
+		}
 	}
 	a.gcr = gc.New(a.d, gcCfg)
 	a.gcr.Start(ctx)

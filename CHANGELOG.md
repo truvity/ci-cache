@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
+## [Unreleased]
+
+### Fixed
+
+- **The agent sized its local cache from the filesystem, which in a container
+  is the node's disk.** Every byte it wrote there was page cache charged to the
+  container's memory limit, so an uncapped agent pushed a CI job from 76 % of
+  its memory limit with zero reclaim events to 100 % with 59,190 of them, and
+  the runner process was starved until the control plane lost contact with it.
+  The job did not fail, it vanished mid-step.
+
+  The budget now comes from the cgroup's memory limit when there is one, at a
+  quarter of it, and the start-up log says which source was used. `statfs` is
+  still right where the cache owns its volume, which is what the server does.
+
 ## [0.1.1] - 2026-09-23
 
 ### Fixed
