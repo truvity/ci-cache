@@ -88,6 +88,33 @@ chart:
 docs:
     bash hack/check-docs.sh
 
+# Load a RUNNING server and report what it did.
+#
+# Deliberately NOT part of `check`: it needs a server, a bucket and minutes,
+# and a gate that cannot run on a laptop with no cluster is a gate people
+# learn to skip. This is the instrument for the performance work, and its
+# output belongs in docs/bench/ beside the change that moved it.
+#
+# The sweep is the useful form -- one point tells you a number, a curve tells
+# you where the limit is:
+#
+#   just bench-sweep http://localhost:8080/go/build http://localhost:8081
+bench *args:
+    go run ./cmd/ci-cache-bench {{args}}
+
+# Every scenario at every concurrency, appended to one file.
+bench-sweep server admin report="bench.jsonl":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for scenario in warm-disk cold-bucket mixed; do
+        go run ./cmd/ci-cache-bench \
+            --server "{{server}}" --admin "{{admin}}" \
+            --scenario "$scenario" \
+            --concurrency 1,8,64,256,1024 \
+            --report "{{report}}"
+    done
+    echo "wrote {{report}}"
+
 # Known vulnerabilities in what we import and call.
 vuln:
     govulncheck ./...
