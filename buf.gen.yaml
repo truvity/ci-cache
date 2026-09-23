@@ -1,0 +1,16 @@
+# Everything generated here comes from local plugins, installed by devbox, so
+# `just drift` needs nothing but this checkout: a gate that fails because a
+# remote registry rate-limited is a gate people learn to ignore.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/truvity/ci-cache/gen
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: gen
+    opt: paths=source_relative

@@ -1,0 +1,90 @@
+// The build cache's wire protocol.
+//
+// An agent on a CI runner presents GOCACHEPROG to the Go toolchain and serves
+// it from a chain whose last tier is this service. The service is mounted
+// under a path prefix (/go/build) so one listener can carry every front-end;
+// Connect puts the service name in the path, and the prefix simply precedes
+// it.
+//
+// Bodies stream in both directions. A cached object is anything from a few
+// bytes to hundreds of megabytes, and a protocol that buffered whole objects
+// would put the cache's memory ceiling in the hands of whatever is being
+// built.
+syntax = "proto3";
+
+package cache.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Meta is what a tier knows about an object besides its bytes.
+message Meta {
+  // Size in bytes. Set on every response; on a Put it is advisory, and the
+  // server records what it actually received.
+  int64 size = 1;
+  // When the object was created by whatever produced it -- not when it was
+  // cached. The Go toolchain records the modification time of an output and
+  // compares it, so faulting an object between tiers must carry this across.
+  google.protobuf.Timestamp mod_time = 2;
+  // Served back to HTTP clients of the front-ends; empty for opaque bytes.
+  string content_type = 3;
+  // An immutable object may be written once. A second Put returns
+  // AlreadyExists rather than overwriting, which is what lets a content
+  // addressed key be trusted after it is read.
+  bool immutable = 4;
+}
+
+message StatRequest {
+  string key = 1;
+}
+
+message StatResponse {
+  // False when the key is absent. An absent key is not an error: a cache miss
+  // is the ordinary case and costs a client nothing to handle.
+  bool exists = 1;
+  Meta meta = 2;
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+// The first message of the stream carries the metadata and no bytes; every
+// message after it carries bytes and no metadata.
+message GetResponse {
+  oneof part {
+    Meta meta = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PutHeader {
+  string key = 1;
+  Meta meta = 2;
+}
+
+// Mirrors GetResponse: header first, then bytes.
+message PutRequest {
+  oneof part {
+    PutHeader header = 1;
+    bytes chunk = 2;
+  }
+}
+
+message PutResponse {
+  // What the server stored, which is authoritative: a client that miscounted
+  // its own body learns so here rather than on the next read.
+  int64 size = 1;
+}
+
+// Cache is one tier of the chain, reachable over the network.
+//
+// Errors are Connect codes with meanings the chain depends on:
+//   NotFound           the key is absent (Get only; Stat answers exists=false)
+//   AlreadyExists      an immutable key is already present
+//   ResourceExhausted  the server cannot make room for the object
+//   Unavailable        the server is over its concurrency limit
+service Cache {
+  rpc Stat(StatRequest) returns (StatResponse);
+  rpc Get(GetRequest) returns (stream GetResponse);
+  rpc Put(stream PutRequest) returns (PutResponse);
+}

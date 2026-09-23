@@ -1,0 +1,119 @@
+// The cache's administrative API.
+//
+// It is served on a SECOND listener, which the consumer NetworkPolicy never
+// admits. On the data port every CI job is a client, and a job that can wipe
+// can empty or poison the cache for everyone; the port is the boundary.
+//
+// The three wipes are separate calls on purpose. Clearing a prefix from disk
+// costs a re-download; clearing it from the bucket is the real reset, and it
+// should not be reachable by one wrong argument to the other.
+syntax = "proto3";
+
+package admin.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// TierStats is one tier's counters since the process started.
+message TierStats {
+  string tier = 1;
+  int64 gets = 2;
+  int64 hits = 3;
+  int64 misses = 4;
+  int64 errors = 5;
+  int64 puts = 6;
+  int64 bytes_read = 7;
+  int64 bytes_written = 8;
+}
+
+// FrontendStats is one front-end's counters, and what it holds on disk.
+message FrontendStats {
+  string frontend = 1;
+  repeated TierStats tiers = 2;
+  int64 entries = 3;
+  int64 bytes = 4;
+  int64 negative_entries = 5;
+}
+
+message StatsRequest {}
+
+message StatsResponse {
+  string version = 1;
+  google.protobuf.Timestamp started_at = 2;
+  repeated FrontendStats frontends = 3;
+  // Disk tier as a whole: what it holds and what it may hold. The budget
+  // comes from the filesystem, so it moves when the volume is resized and
+  // never needs to be stated twice.
+  int64 disk_used_bytes = 4;
+  int64 disk_budget_bytes = 5;
+  // Objects waiting to be written to the bucket. A number that only grows
+  // means the bucket is slower than the cache is being filled.
+  int64 upload_queue_depth = 6;
+  // True while the disk index is still being rebuilt from the filesystem;
+  // the cache serves throughout, but its counters are incomplete.
+  bool index_cold = 7;
+}
+
+message Entry {
+  string key = 1;
+  int64 size = 2;
+  google.protobuf.Timestamp last_access = 3;
+  bool immutable = 4;
+}
+
+message ListRequest {
+  string prefix = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListResponse {
+  repeated Entry entries = 1;
+  string next_page_token = 2;
+}
+
+// Removed is what a mutating call actually did. A wipe that matched nothing
+// is not an error, and the count is how a caller tells the difference.
+message Removed {
+  int64 entries = 1;
+  int64 bytes = 2;
+}
+
+message WipeDiskRequest {
+  // A prefix ends in "/" and removes everything under it; anything else is
+  // treated as one exact key.
+  string prefix_or_key = 1;
+}
+
+message WipeDiskResponse {
+  Removed removed = 1;
+}
+
+message WipeBucketRequest {
+  // A prefix only, and never empty: this call deletes objects that the disk
+  // tier cannot bring back. The server refuses "" and "/".
+  string prefix = 1;
+}
+
+message WipeBucketResponse {
+  // The bucket objects deleted, and separately the disk entries that went
+  // with them -- keeping a disk copy of what the bucket no longer has would
+  // make the next read lie.
+  Removed removed = 1;
+  Removed removed_from_disk = 2;
+}
+
+message InvalidateRequest {
+  string prefix = 1;
+}
+
+message InvalidateResponse {
+  Removed removed = 1;
+}
+
+service Admin {
+  rpc Stats(StatsRequest) returns (StatsResponse);
+  rpc List(ListRequest) returns (ListResponse);
+  rpc WipeDisk(WipeDiskRequest) returns (WipeDiskResponse);
+  rpc WipeBucket(WipeBucketRequest) returns (WipeBucketResponse);
+  rpc Invalidate(InvalidateRequest) returns (InvalidateResponse);
+}

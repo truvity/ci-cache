@@ -1,0 +1,27 @@
+{
+  "packages": {
+    "buf":           "latest",
+    "go":            "1.27.0",
+    "golangci-lint": "2.13.1",
+    "goreleaser":    "latest",
+    "gopls":         "latest",
+
+    "govulncheck":           "1.7.0",
+    "just-lsp":              "latest",
+    "just":                  "latest",
+    "ko":                    "latest",
+    "kubernetes-helm":       "latest",
+    "lefthook":              "latest",
+    "protoc-gen-connect-go": "latest",
+    "protoc-gen-go":         "latest"
+  },
+  "env": {
+    "CGO_ENABLED": "0"
+  },
+  "shell": {
+    "init_hook": [
+      "lefthook install >/dev/null 2>&1 || true"
+    ],
+    "scripts": {}
+  }
+}

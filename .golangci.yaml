@@ -1,0 +1,50 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - gocritic
+    - govet
+    - ineffassign
+    - lll
+    - misspell
+    - revive
+    - staticcheck
+    - unused
+
+  # v2 schema: settings live UNDER linters. A top-level `linters-settings:`
+  # block is accepted silently by `run`; only `golangci-lint config verify`
+  # rejects it, which is why the lint recipe runs verify first. Otherwise a
+  # settings block in the wrong place spends releases doing nothing.
+  settings:
+    lll:
+      line-length: 160
+    gocritic:
+      settings:
+        rangeValCopy:
+          # A catalogue value is read-mostly configuration, walked once per
+          # validation. Ranging by key to save a copy of it would make the code
+          # worse for a cost nothing measures.
+          sizeThreshold: 512
+      enabled-checks:
+        # Opt-in (performance tag); the diagnostics tag — which already
+        # carries exitAfterDefer — is on by default, so listing that one
+        # here only earns a "no need to enable" warning.
+        - rangeValCopy
+
+  exclusions:
+    # gen/ is buf output, committed for `go get`-ability but never hand-edited.
+    paths:
+      - gen
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - gen
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
