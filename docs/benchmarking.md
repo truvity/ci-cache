@@ -106,6 +106,6 @@ cluster, and it saturates long before the server does. A port-forwarded run
 is good for proving the harness works and for nothing else.
 
 A real baseline runs in the cluster, next to the server, on the same kind of
-node a CI job uses. Numbers captured any other way should say so in the
+node a CI job uses. The ones taken that way live in [bench/](bench/README.md). Numbers captured any other way should say so in the
 report's notes, or they will be compared against in-cluster numbers a month
 from now by someone who did not know.
