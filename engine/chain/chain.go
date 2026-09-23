@@ -116,7 +116,7 @@ func (c *Chain) Get(ctx context.Context, key string) (io.ReadCloser, tier.Meta, 
 			r := &result{meta: m}
 			if m.Size > 0 && m.Size <= faultThreshold {
 				b, err := io.ReadAll(rc)
-				rc.Close()
+				_ = rc.Close()
 				if err != nil {
 					return nil, fmt.Errorf("chain: read %s from %s: %w", key, c.tiers[i].Name(), err)
 				}
@@ -127,17 +127,17 @@ func (c *Chain) Get(ctx context.Context, key string) (io.ReadCloser, tier.Meta, 
 				// size of what is being cached.
 				f, err := os.CreateTemp("", "ci-cache-fault-*")
 				if err != nil {
-					rc.Close()
+					_ = rc.Close()
 					return nil, err
 				}
 				n, err := io.Copy(f, rc)
-				rc.Close()
+				_ = rc.Close()
 				if err != nil {
-					f.Close()
-					os.Remove(f.Name())
+					_ = f.Close()
+					_ = os.Remove(f.Name())
 					return nil, fmt.Errorf("chain: read %s from %s: %w", key, c.tiers[i].Name(), err)
 				}
-				f.Close()
+				_ = f.Close()
 				r.path = f.Name()
 				r.meta.Size = n
 			}
@@ -159,7 +159,7 @@ func (c *Chain) Get(ctx context.Context, key string) (io.ReadCloser, tier.Meta, 
 					src = io.NopCloser(bytesReader(r.body))
 				}
 				err := c.tiers[j].Put(ctx, key, src, r.meta)
-				src.Close()
+				_ = src.Close()
 				if err != nil && !errors.Is(err, tier.ErrExists) && !errors.Is(err, tier.ErrNoSpace) {
 					// Faulting forward is an optimisation. Failing it costs
 					// the next reader a slower answer and nothing else.
@@ -183,7 +183,7 @@ func (c *Chain) Get(ctx context.Context, key string) (io.ReadCloser, tier.Meta, 
 		// The file is unlinked now and closed by the caller: the data stays
 		// readable through the open descriptor, and nothing has to remember
 		// to clean up after a caller that goes away.
-		os.Remove(r.path)
+		_ = os.Remove(r.path)
 		return f, r.meta, nil
 	}
 	return io.NopCloser(bytesReader(r.body)), r.meta, nil
@@ -221,13 +221,13 @@ func (c *Chain) Put(ctx context.Context, key string, r io.Reader, m tier.Meta) e
 		if err != nil {
 			return err
 		}
-		defer os.Remove(f.Name())
+		defer func() { _ = os.Remove(f.Name()) }()
 		n, err := io.Copy(f, r)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return err
 		}
-		f.Close()
+		_ = f.Close()
 		path = f.Name()
 		m.Size = n
 	}
@@ -244,7 +244,7 @@ func (c *Chain) Put(ctx context.Context, key string, r io.Reader, m tier.Meta) e
 		return err
 	}
 	err = c.tiers[0].Put(ctx, key, src, m)
-	src.Close()
+	_ = src.Close()
 	if err != nil && !errors.Is(err, tier.ErrExists) {
 		return err
 	}
@@ -269,7 +269,7 @@ func (c *Chain) Put(ctx context.Context, key string, r io.Reader, m tier.Meta) e
 			continue
 		}
 		err = c.tiers[i].Put(ctx, key, src, m)
-		src.Close()
+		_ = src.Close()
 		if err != nil && !errors.Is(err, tier.ErrExists) && !errors.Is(err, tier.ErrNoSpace) {
 			_ = err
 		}

@@ -110,7 +110,7 @@ message InvalidateResponse {
   Removed removed = 1;
 }
 
-service Admin {
+service AdminService {
   rpc Stats(StatsRequest) returns (StatsResponse);
   rpc List(ListRequest) returns (ListResponse);
   rpc WipeDisk(WipeDiskRequest) returns (WipeDiskResponse);

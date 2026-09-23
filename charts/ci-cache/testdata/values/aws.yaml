@@ -1,0 +1,13 @@
+# AWS S3 with pod identity: no keys anywhere, the role bound to the service
+# account. The shape most of the estate installs.
+store:
+  bucket: ci-cache-example
+  region: eu-west-1
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::<account>:role/<role>"
+
+networkPolicy:
+  enabled: true
+  consumerNamespaces: [ci]

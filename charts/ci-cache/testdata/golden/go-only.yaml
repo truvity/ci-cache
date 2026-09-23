@@ -1,0 +1,282 @@
+---
+# Source: ci-cache/templates/serviceaccount.yaml
+# The identity that reads and writes the bucket, and nothing else. On a store
+# with pod identity this is where the binding goes; with static keys it stays
+# bare and `store.existingSecret` carries them. Both at once is refused.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-cache
+  labels:
+    helm.sh/chart: ci-cache-0.1.0
+    app.kubernetes.io/name: ci-cache
+    app.kubernetes.io/instance: ci-cache
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: ci-cache/templates/pvc.yaml
+# The disk tier. ReadWriteOnce on purpose: the tier is a local filesystem with
+# a local index, and two pods writing one directory would each keep an index of
+# what the other was evicting. The Deployment's Recreate strategy is the other
+# half of that decision.
+#
+# Sized for the working set, not the corpus. Everything is in the bucket; this
+# holds what was asked for recently, and `gc` keeps it inside the volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ci-cache-data
+  labels:
+    helm.sh/chart: ci-cache-0.1.0
+    app.kubernetes.io/name: ci-cache
+    app.kubernetes.io/instance: ci-cache
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+# Source: ci-cache/templates/service.yaml
+# TWO Services, not one Service with two ports.
+#
+# A consumer is given a name, and the name it is given must not be able to
+# carry the admin port. With one Service the wipes are one `port:` away from
+# whatever a caller pastes into a NetworkPolicy or an Ingress -- and a job
+# that can wipe can empty the cache for everyone, silently, in a request that
+# returns 200. Separate objects make that mistake impossible to make by
+# accident: to reach the admin API you have to name a different Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ci-cache
+  labels:
+    helm.sh/chart: ci-cache-0.1.0
+    app.kubernetes.io/name: ci-cache
+    app.kubernetes.io/instance: ci-cache
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ci-cache
+    app.kubernetes.io/instance: ci-cache
+  ports:
+    - name: data
+      port: 8080
+      targetPort: data
+      protocol: TCP
+
+---
+# Source: ci-cache/templates/service.yaml
+# Stats, List, the wipes and the UI. Nothing a build runs should ever be told
+# this name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ci-cache-admin
+  labels:
+    helm.sh/chart: ci-cache-0.1.0
+    app.kubernetes.io/name: ci-cache
+    app.kubernetes.io/instance: ci-cache
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: admin
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ci-cache
+    app.kubernetes.io/instance: ci-cache
+  ports:
+    - name: admin
+      port: 8081
+      targetPort: admin
+      protocol: TCP
+
+---
+# Source: ci-cache/templates/deployment.yaml
+# One process, one volume, one replica.
+#
+# A second replica would not be a second cache but half a cache twice: the
+# disk tier is local, so two pods behind one Service each answer from what
+# they happen to hold, and every entry is written and evicted twice. Scaling
+# a cache means a bigger volume or a tier closer to the runner, never more
+# pods -- which is why `replicas` is not a value.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ci-cache
+  labels:
+    helm.sh/chart: ci-cache-0.1.0
+    app.kubernetes.io/name: ci-cache
+    app.kubernetes.io/instance: ci-cache
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  # One pod at a time may hold a ReadWriteOnce volume, so the old pod goes
+  # before the new one arrives. A rolling update deadlocks: the new pod waits
+  # for a claim the old pod will not release until the new pod is ready.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ci-cache
+      app.kubernetes.io/instance: ci-cache
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ci-cache
+        app.kubernetes.io/instance: ci-cache
+    spec:
+      serviceAccountName: ci-cache
+      # The drain plus ten seconds. The server keeps serving for
+      # `server.drainTimeout` after SIGTERM so that a build in flight finishes
+      # reading; a grace period equal to the drain would have the kill land in
+      # the same instant, and a truncated response is a corrupt cache entry.
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        # Not values. A cache has no reason to want any of this relaxed, and
+        # an installation that needs it relaxed has found a bug worth fixing
+        # rather than a knob worth turning. The numbers are the nonroot user
+        # of the distroless base ko builds on; fsGroup is what lets the pod
+        # write the volume it is given.
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ci-cache
+          image: ghcr.io/truvity/ci-cache/ci-cache:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CI_CACHE_STORE_BUCKET
+              value: "ci-cache-example"
+            - name: CI_CACHE_STORE_REGION
+              value: "eu-west-1"
+            - name: CI_CACHE_STORE_PATH_STYLE
+              value: "false"
+            - name: CI_CACHE_FRONTENDS_GO_BUILD_ENABLED
+              value: "true"
+            - name: CI_CACHE_FRONTENDS_GO_MOD_ENABLED
+              value: "true"
+            - name: CI_CACHE_FRONTENDS_GO_MOD_UPSTREAM
+              value: "https://proxy.golang.org"
+            - name: CI_CACHE_FRONTENDS_GO_MOD_SUMDB
+              value: "sum.golang.org"
+            - name: CI_CACHE_FRONTENDS_GO_MOD_LIST_TTL
+              value: "10m"
+            - name: CI_CACHE_FRONTENDS_MAVEN_ENABLED
+              value: "false"
+            - name: CI_CACHE_FRONTENDS_MAVEN_METADATA_TTL
+              value: "10m"
+            - name: CI_CACHE_FRONTENDS_MAVEN_NEGATIVE_TTL
+              value: "5m"
+            - name: CI_CACHE_FRONTENDS_GRADLE_BUILD_ENABLED
+              value: "false"
+            - name: CI_CACHE_FRONTENDS_GRADLE_BUILD_READ_ONLY
+              value: "false"
+            - name: CI_CACHE_FRONTENDS_GRADLE_BUILD_MAX_ENTRY
+              value: "536870912"
+            - name: CI_CACHE_FRONTENDS_GRADLE_DIST_ENABLED
+              value: "false"
+            - name: CI_CACHE_FRONTENDS_GRADLE_DIST_ALLOW
+              value: "https://services.gradle.org/distributions/"
+            - name: CI_CACHE_FRONTENDS_NIX_ENABLED
+              value: "false"
+            - name: CI_CACHE_FRONTENDS_NIX_UPSTREAMS
+              value: "https://cache.nixos.org"
+            - name: CI_CACHE_FRONTENDS_NIX_PRIORITY
+              value: "10"
+            - name: CI_CACHE_FRONTENDS_NIX_NEGATIVE_TTL
+              value: "5m"
+            - name: CI_CACHE_FRONTENDS_NPM_ENABLED
+              value: "false"
+            - name: CI_CACHE_FRONTENDS_NPM_UPSTREAM
+              value: "https://registry.npmjs.org"
+            - name: CI_CACHE_FRONTENDS_NPM_METADATA_TTL
+              value: "5m"
+            - name: CI_CACHE_FRONTENDS_BAZEL_ENABLED
+              value: "false"
+            - name: CI_CACHE_PERSISTENCE_DIR
+              value: "/data"
+            - name: CI_CACHE_PERSISTENCE_EPHEMERAL_IS_ACCEPTABLE
+              value: "false"
+            - name: CI_CACHE_GC_FLOOR
+              value: "10"
+            - name: CI_CACHE_GC_HIGH
+              value: "95"
+            - name: CI_CACHE_GC_LOW
+              value: "85"
+            - name: CI_CACHE_GC_BUDGET_BYTES
+              value: "0"
+            - name: CI_CACHE_UPLOAD_CONCURRENCY
+              value: "8"
+            - name: CI_CACHE_UPLOAD_QUEUE
+              value: "1024"
+            - name: CI_CACHE_UPLOAD_QUEUE_BYTES
+              value: "2147483648"
+            - name: CI_CACHE_UPLOAD_MIN_SIZE
+              value: "0"
+            - name: CI_CACHE_SERVICE_DATA
+              value: "8080"
+            - name: CI_CACHE_SERVICE_ADMIN
+              value: "8081"
+            - name: CI_CACHE_SERVER_CONCURRENCY
+              value: "256"
+            - name: CI_CACHE_SERVER_DRAIN_TIMEOUT
+              value: "30s"
+            - name: CI_CACHE_TELEMETRY_TRACE_RATIO
+              value: "0.01"
+            - name: CI_CACHE_LOG_LEVEL
+              value: "info"
+          ports:
+            - name: data
+              containerPort: 8080
+              protocol: TCP
+            # Named and exposed, but never reachable from a consumer
+            # namespace: see the NetworkPolicy.
+            - name: admin
+              containerPort: 8081
+              protocol: TCP
+          # Liveness says the process is alive; readiness says the disk tier is
+          # open and the bucket answered. They are different questions, and
+          # answering both with /healthz would restart a pod whose bucket was
+          # briefly unreachable -- turning somebody else's outage into a cold
+          # cache.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: data
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: data
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            {}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # The root filesystem is read-only, and an upload that has to be
+            # buffered needs somewhere to put it.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ci-cache-data
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,12 @@
+# Cloudflare R2: an endpoint, "auto" for a region, path-style addressing, and
+# static keys in a Secret because R2 has no pod identity to bind.
+store:
+  bucket: ci-cache-example
+  region: auto
+  endpoint: https://<account>.r2.cloudflarestorage.com
+  pathStyle: true
+  existingSecret: ci-cache-r2
+
+networkPolicy:
+  enabled: true
+  consumerNamespaces: [ci, build]

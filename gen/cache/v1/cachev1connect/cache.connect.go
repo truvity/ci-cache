@@ -34,8 +34,8 @@ import (
 const _ = connect.IsAtLeastVersion1_13_0
 
 const (
-	// CacheName is the fully-qualified name of the Cache service.
-	CacheName = "cache.v1.Cache"
+	// CacheServiceName is the fully-qualified name of the CacheService service.
+	CacheServiceName = "cache.v1.CacheService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -46,132 +46,132 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// CacheStatProcedure is the fully-qualified name of the Cache's Stat RPC.
-	CacheStatProcedure = "/cache.v1.Cache/Stat"
-	// CacheGetProcedure is the fully-qualified name of the Cache's Get RPC.
-	CacheGetProcedure = "/cache.v1.Cache/Get"
-	// CachePutProcedure is the fully-qualified name of the Cache's Put RPC.
-	CachePutProcedure = "/cache.v1.Cache/Put"
+	// CacheServiceStatProcedure is the fully-qualified name of the CacheService's Stat RPC.
+	CacheServiceStatProcedure = "/cache.v1.CacheService/Stat"
+	// CacheServiceGetProcedure is the fully-qualified name of the CacheService's Get RPC.
+	CacheServiceGetProcedure = "/cache.v1.CacheService/Get"
+	// CacheServicePutProcedure is the fully-qualified name of the CacheService's Put RPC.
+	CacheServicePutProcedure = "/cache.v1.CacheService/Put"
 )
 
-// CacheClient is a client for the cache.v1.Cache service.
-type CacheClient interface {
+// CacheServiceClient is a client for the cache.v1.CacheService service.
+type CacheServiceClient interface {
 	Stat(context.Context, *connect.Request[v1.StatRequest]) (*connect.Response[v1.StatResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest]) (*connect.ServerStreamForClient[v1.GetResponse], error)
 	Put(context.Context) *connect.ClientStreamForClient[v1.PutRequest, v1.PutResponse]
 }
 
-// NewCacheClient constructs a client for the cache.v1.Cache service. By default, it uses the
-// Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// NewCacheServiceClient constructs a client for the cache.v1.CacheService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
 // uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
 // connect.WithGRPCWeb() options.
 //
 // The URL supplied here should be the base URL for the Connect or gRPC server (for example,
 // http://api.acme.com or https://acme.com/grpc).
-func NewCacheClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) CacheClient {
+func NewCacheServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) CacheServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
-	cacheMethods := v1.File_cache_v1_cache_proto.Services().ByName("Cache").Methods()
-	return &cacheClient{
+	cacheServiceMethods := v1.File_cache_v1_cache_proto.Services().ByName("CacheService").Methods()
+	return &cacheServiceClient{
 		stat: connect.NewClient[v1.StatRequest, v1.StatResponse](
 			httpClient,
-			baseURL+CacheStatProcedure,
-			connect.WithSchema(cacheMethods.ByName("Stat")),
+			baseURL+CacheServiceStatProcedure,
+			connect.WithSchema(cacheServiceMethods.ByName("Stat")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.GetRequest, v1.GetResponse](
 			httpClient,
-			baseURL+CacheGetProcedure,
-			connect.WithSchema(cacheMethods.ByName("Get")),
+			baseURL+CacheServiceGetProcedure,
+			connect.WithSchema(cacheServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 		put: connect.NewClient[v1.PutRequest, v1.PutResponse](
 			httpClient,
-			baseURL+CachePutProcedure,
-			connect.WithSchema(cacheMethods.ByName("Put")),
+			baseURL+CacheServicePutProcedure,
+			connect.WithSchema(cacheServiceMethods.ByName("Put")),
 			connect.WithClientOptions(opts...),
 		),
 	}
 }
 
-// cacheClient implements CacheClient.
-type cacheClient struct {
+// cacheServiceClient implements CacheServiceClient.
+type cacheServiceClient struct {
 	stat *connect.Client[v1.StatRequest, v1.StatResponse]
 	get  *connect.Client[v1.GetRequest, v1.GetResponse]
 	put  *connect.Client[v1.PutRequest, v1.PutResponse]
 }
 
-// Stat calls cache.v1.Cache.Stat.
-func (c *cacheClient) Stat(ctx context.Context, req *connect.Request[v1.StatRequest]) (*connect.Response[v1.StatResponse], error) {
+// Stat calls cache.v1.CacheService.Stat.
+func (c *cacheServiceClient) Stat(ctx context.Context, req *connect.Request[v1.StatRequest]) (*connect.Response[v1.StatResponse], error) {
 	return c.stat.CallUnary(ctx, req)
 }
 
-// Get calls cache.v1.Cache.Get.
-func (c *cacheClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.ServerStreamForClient[v1.GetResponse], error) {
+// Get calls cache.v1.CacheService.Get.
+func (c *cacheServiceClient) Get(ctx context.Context, req *connect.Request[v1.GetRequest]) (*connect.ServerStreamForClient[v1.GetResponse], error) {
 	return c.get.CallServerStream(ctx, req)
 }
 
-// Put calls cache.v1.Cache.Put.
-func (c *cacheClient) Put(ctx context.Context) *connect.ClientStreamForClient[v1.PutRequest, v1.PutResponse] {
+// Put calls cache.v1.CacheService.Put.
+func (c *cacheServiceClient) Put(ctx context.Context) *connect.ClientStreamForClient[v1.PutRequest, v1.PutResponse] {
 	return c.put.CallClientStream(ctx)
 }
 
-// CacheHandler is an implementation of the cache.v1.Cache service.
-type CacheHandler interface {
+// CacheServiceHandler is an implementation of the cache.v1.CacheService service.
+type CacheServiceHandler interface {
 	Stat(context.Context, *connect.Request[v1.StatRequest]) (*connect.Response[v1.StatResponse], error)
 	Get(context.Context, *connect.Request[v1.GetRequest], *connect.ServerStream[v1.GetResponse]) error
 	Put(context.Context, *connect.ClientStream[v1.PutRequest]) (*connect.Response[v1.PutResponse], error)
 }
 
-// NewCacheHandler builds an HTTP handler from the service implementation. It returns the path on
-// which to mount the handler and the handler itself.
+// NewCacheServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
 //
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
-func NewCacheHandler(svc CacheHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	cacheMethods := v1.File_cache_v1_cache_proto.Services().ByName("Cache").Methods()
-	cacheStatHandler := connect.NewUnaryHandler(
-		CacheStatProcedure,
+func NewCacheServiceHandler(svc CacheServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	cacheServiceMethods := v1.File_cache_v1_cache_proto.Services().ByName("CacheService").Methods()
+	cacheServiceStatHandler := connect.NewUnaryHandler(
+		CacheServiceStatProcedure,
 		svc.Stat,
-		connect.WithSchema(cacheMethods.ByName("Stat")),
+		connect.WithSchema(cacheServiceMethods.ByName("Stat")),
 		connect.WithHandlerOptions(opts...),
 	)
-	cacheGetHandler := connect.NewServerStreamHandler(
-		CacheGetProcedure,
+	cacheServiceGetHandler := connect.NewServerStreamHandler(
+		CacheServiceGetProcedure,
 		svc.Get,
-		connect.WithSchema(cacheMethods.ByName("Get")),
+		connect.WithSchema(cacheServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
-	cachePutHandler := connect.NewClientStreamHandler(
-		CachePutProcedure,
+	cacheServicePutHandler := connect.NewClientStreamHandler(
+		CacheServicePutProcedure,
 		svc.Put,
-		connect.WithSchema(cacheMethods.ByName("Put")),
+		connect.WithSchema(cacheServiceMethods.ByName("Put")),
 		connect.WithHandlerOptions(opts...),
 	)
-	return "/cache.v1.Cache/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return "/cache.v1.CacheService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case CacheStatProcedure:
-			cacheStatHandler.ServeHTTP(w, r)
-		case CacheGetProcedure:
-			cacheGetHandler.ServeHTTP(w, r)
-		case CachePutProcedure:
-			cachePutHandler.ServeHTTP(w, r)
+		case CacheServiceStatProcedure:
+			cacheServiceStatHandler.ServeHTTP(w, r)
+		case CacheServiceGetProcedure:
+			cacheServiceGetHandler.ServeHTTP(w, r)
+		case CacheServicePutProcedure:
+			cacheServicePutHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
 	})
 }
 
-// UnimplementedCacheHandler returns CodeUnimplemented from all methods.
-type UnimplementedCacheHandler struct{}
+// UnimplementedCacheServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedCacheServiceHandler struct{}
 
-func (UnimplementedCacheHandler) Stat(context.Context, *connect.Request[v1.StatRequest]) (*connect.Response[v1.StatResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cache.v1.Cache.Stat is not implemented"))
+func (UnimplementedCacheServiceHandler) Stat(context.Context, *connect.Request[v1.StatRequest]) (*connect.Response[v1.StatResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cache.v1.CacheService.Stat is not implemented"))
 }
 
-func (UnimplementedCacheHandler) Get(context.Context, *connect.Request[v1.GetRequest], *connect.ServerStream[v1.GetResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("cache.v1.Cache.Get is not implemented"))
+func (UnimplementedCacheServiceHandler) Get(context.Context, *connect.Request[v1.GetRequest], *connect.ServerStream[v1.GetResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("cache.v1.CacheService.Get is not implemented"))
 }
 
-func (UnimplementedCacheHandler) Put(context.Context, *connect.ClientStream[v1.PutRequest]) (*connect.Response[v1.PutResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cache.v1.Cache.Put is not implemented"))
+func (UnimplementedCacheServiceHandler) Put(context.Context, *connect.ClientStream[v1.PutRequest]) (*connect.Response[v1.PutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cache.v1.CacheService.Put is not implemented"))
 }

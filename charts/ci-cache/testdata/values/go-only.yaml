@@ -1,0 +1,19 @@
+# The smallest useful installation: the Go build cache and the module proxy,
+# nothing else mounted, and no policy. What a single-language repository's
+# cluster runs.
+store:
+  bucket: ci-cache-example
+  region: eu-west-1
+
+frontends:
+  go:
+    build:
+      enabled: true
+    mod:
+      enabled: true
+
+persistence:
+  size: 20Gi
+
+networkPolicy:
+  enabled: false

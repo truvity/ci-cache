@@ -919,8 +919,8 @@ const file_admin_v1_admin_proto_rawDesc = "" +
 	"\x11InvalidateRequest\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\"A\n" +
 	"\x12InvalidateResponse\x12+\n" +
-	"\aremoved\x18\x01 \x01(\v2\x11.admin.v1.RemovedR\aremoved2\xcd\x02\n" +
-	"\x05Admin\x128\n" +
+	"\aremoved\x18\x01 \x01(\v2\x11.admin.v1.RemovedR\aremoved2\xd4\x02\n" +
+	"\fAdminService\x128\n" +
 	"\x05Stats\x12\x16.admin.v1.StatsRequest\x1a\x17.admin.v1.StatsResponse\x125\n" +
 	"\x04List\x12\x15.admin.v1.ListRequest\x1a\x16.admin.v1.ListResponse\x12A\n" +
 	"\bWipeDisk\x12\x19.admin.v1.WipeDiskRequest\x1a\x1a.admin.v1.WipeDiskResponse\x12G\n" +
@@ -971,16 +971,16 @@ var file_admin_v1_admin_proto_depIdxs = []int32{
 	7,  // 6: admin.v1.WipeBucketResponse.removed:type_name -> admin.v1.Removed
 	7,  // 7: admin.v1.WipeBucketResponse.removed_from_disk:type_name -> admin.v1.Removed
 	7,  // 8: admin.v1.InvalidateResponse.removed:type_name -> admin.v1.Removed
-	2,  // 9: admin.v1.Admin.Stats:input_type -> admin.v1.StatsRequest
-	5,  // 10: admin.v1.Admin.List:input_type -> admin.v1.ListRequest
-	8,  // 11: admin.v1.Admin.WipeDisk:input_type -> admin.v1.WipeDiskRequest
-	10, // 12: admin.v1.Admin.WipeBucket:input_type -> admin.v1.WipeBucketRequest
-	12, // 13: admin.v1.Admin.Invalidate:input_type -> admin.v1.InvalidateRequest
-	3,  // 14: admin.v1.Admin.Stats:output_type -> admin.v1.StatsResponse
-	6,  // 15: admin.v1.Admin.List:output_type -> admin.v1.ListResponse
-	9,  // 16: admin.v1.Admin.WipeDisk:output_type -> admin.v1.WipeDiskResponse
-	11, // 17: admin.v1.Admin.WipeBucket:output_type -> admin.v1.WipeBucketResponse
-	13, // 18: admin.v1.Admin.Invalidate:output_type -> admin.v1.InvalidateResponse
+	2,  // 9: admin.v1.AdminService.Stats:input_type -> admin.v1.StatsRequest
+	5,  // 10: admin.v1.AdminService.List:input_type -> admin.v1.ListRequest
+	8,  // 11: admin.v1.AdminService.WipeDisk:input_type -> admin.v1.WipeDiskRequest
+	10, // 12: admin.v1.AdminService.WipeBucket:input_type -> admin.v1.WipeBucketRequest
+	12, // 13: admin.v1.AdminService.Invalidate:input_type -> admin.v1.InvalidateRequest
+	3,  // 14: admin.v1.AdminService.Stats:output_type -> admin.v1.StatsResponse
+	6,  // 15: admin.v1.AdminService.List:output_type -> admin.v1.ListResponse
+	9,  // 16: admin.v1.AdminService.WipeDisk:output_type -> admin.v1.WipeDiskResponse
+	11, // 17: admin.v1.AdminService.WipeBucket:output_type -> admin.v1.WipeBucketResponse
+	13, // 18: admin.v1.AdminService.Invalidate:output_type -> admin.v1.InvalidateResponse
 	14, // [14:19] is the sub-list for method output_type
 	9,  // [9:14] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name

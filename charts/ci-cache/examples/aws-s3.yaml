@@ -1,0 +1,44 @@
+# ci-cache on AWS S3, with pod identity.
+#
+# Nothing here is a credential. The role is bound to the chart's service
+# account and the SDK picks it up from the pod; asking for access keys on AWS
+# is asking for the thing pod identity exists to remove. Replace every
+# <placeholder> with your own.
+#
+# The role needs, on this bucket and its prefix only:
+#   s3:GetObject, s3:PutObject, s3:DeleteObject, s3:ListBucket
+# and nothing on any other bucket. The cache deletes what it evicts, so the
+# permission is real; scope it with `store.keyPrefix` if the bucket is shared.
+
+store:
+  bucket: <bucket>
+  # The bucket's region, not the cluster's. A cross-region cache works and
+  # costs a transfer charge per miss.
+  region: <region>
+
+serviceAccount:
+  create: true
+  # EKS Pod Identity or IRSA. This is the whole credential story on AWS.
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::<account>:role/<role>"
+
+persistence:
+  enabled: true
+  # The working set. The bucket holds the corpus; this is what recent builds
+  # asked for, and `gc` keeps it inside the volume.
+  size: 200Gi
+  storageClass: <storage-class>
+
+frontends:
+  go:
+    build:
+      enabled: true
+    mod:
+      enabled: true
+
+# Name the namespaces whose jobs may use the cache. An empty list here admits
+# nobody -- which is correct, and is not the same as leaving the policy off.
+networkPolicy:
+  enabled: true
+  consumerNamespaces:
+    - <namespace>

@@ -1,0 +1,43 @@
+# Tag-triggered release — the shared implementation (truvity/ci-workflows).
+# goreleaser builds the server as archives, so that a laptop or a runner can
+# hold the same binary the cluster does, and, through ko, the one image the
+# chart deploys. The chart itself is packaged at the tag's version and pushed
+# to oci://ghcr.io/truvity/charts/ci-cache.
+#
+# The caller grants the permissions because a reusable workflow can
+# narrow them but never widen them.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+# Never cancel a running publish — a half-pushed artifact set is worse
+# than a queued wait.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      packages: write
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+    with:
+      charts: '["ci-cache"]'
+      # The server as a Nix flake, one release asset, so that a runner image
+      # or another repository's devbox can pin this binary by hash. The tiers
+      # are one program: the cache a developer runs over a bucket is the same
+      # binary the cluster runs, and a pin is how it stays the same one.
+      nix-flakes: '["ci-cache"]'
+      # ko appends the command's import-path base to this, so ./cmd/ci-cache
+      # publishes ghcr.io/truvity/ci-cache/ci-cache — which is what the
+      # chart's `image.repository` names. This value, and NOT the
+      # `repositories:` list in .goreleaser.yaml, is what ko obeys.
+      ko-docker-repo: ghcr.io/truvity/ci-cache

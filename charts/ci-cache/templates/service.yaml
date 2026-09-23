@@ -1,0 +1,42 @@
+# TWO Services, not one Service with two ports.
+#
+# A consumer is given a name, and the name it is given must not be able to
+# carry the admin port. With one Service the wipes are one `port:` away from
+# whatever a caller pastes into a NetworkPolicy or an Ingress -- and a job
+# that can wipe can empty the cache for everyone, silently, in a request that
+# returns 200. Separate objects make that mistake impossible to make by
+# accident: to reach the admin API you have to name a different Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ci-cache.fullname" . }}
+  labels:
+    {{- include "ci-cache.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "ci-cache.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: data
+      port: {{ .Values.service.data }}
+      targetPort: data
+      protocol: TCP
+---
+# Stats, List, the wipes and the UI. Nothing a build runs should ever be told
+# this name.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ci-cache.fullname" . }}-admin
+  labels:
+    {{- include "ci-cache.labels" . | nindent 4 }}
+    app.kubernetes.io/component: admin
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "ci-cache.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: admin
+      port: {{ .Values.service.admin }}
+      targetPort: admin
+      protocol: TCP

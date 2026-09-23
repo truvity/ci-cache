@@ -1,0 +1,53 @@
+# ci-cache on Cloudflare R2.
+#
+# R2 differs from S3 in three ways that all have to be said at once, and
+# saying two of them produces a failure that reads like a fourth:
+#
+#   region: auto    R2 refuses a bucket-location lookup, and an SDK left to
+#                   guess signs with whatever the pod's environment carries.
+#                   The request then fails on a signature, which reads as a
+#                   credentials problem and is not.
+#   endpoint        Setting it also turns off the SDK's default request and
+#                   response checksums, which R2 rejects.
+#   pathStyle       *.r2.cloudflarestorage.com does not cover a bucket below
+#                   the account, so a virtual-hosted request fails in the TLS
+#                   handshake before anything sees it.
+#
+# R2 has no pod identity, so the credentials are an R2 API token's access key
+# id and secret in a Secret this chart does not create:
+#
+#   kubectl create secret generic ci-cache-r2 \
+#     --from-literal=AWS_ACCESS_KEY_ID=... \
+#     --from-literal=AWS_SECRET_ACCESS_KEY=...
+#
+# Do not also put an identity annotation on the service account: two
+# identities for one process is refused at render time.
+
+store:
+  bucket: <bucket>
+  region: auto
+  endpoint: https://<account>.r2.cloudflarestorage.com
+  pathStyle: true
+  existingSecret: ci-cache-r2
+
+persistence:
+  enabled: true
+  size: 200Gi
+  storageClass: <storage-class>
+
+frontends:
+  go:
+    build:
+      enabled: true
+    mod:
+      enabled: true
+
+# R2 has no egress charge, so a miss is cheaper here than on S3 -- but a miss
+# is still a build waiting, which is what the disk tier above is for.
+upload:
+  minSize: 4096
+
+networkPolicy:
+  enabled: true
+  consumerNamespaces:
+    - <namespace>

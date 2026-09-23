@@ -1,0 +1,57 @@
+# Calls the shared workflow (truvity/ci-workflows), which runs each
+# Justfile recipe as its OWN parallel job, reported under its own name.
+#
+# Pinned by COMMIT SHA, never a tag — tags move, and this code runs in
+# every repository of both organizations.
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # `check` is the hermetic gate: it needs nothing but this checkout — no
+  # containers, no network, no C toolchain — so that a contributor can run
+  # exactly what CI runs. `chart` is in it because the chart's refusals are
+  # `helm template` and nothing more, and `leak-canary` because this
+  # repository is public and a particular cannot be unpublished.
+  recipes:
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+    with:
+      recipes: '["build", "test", "lint", "proto", "drift", "chart", "docs", "vuln", "leak-canary"]'
+
+  # The race detector is the one thing here that needs a C toolchain, and
+  # everything else builds with cgo off — which is what makes the binary
+  # static and the image small. It matters more here than in most
+  # repositories: a cache hands an object between the request goroutine that
+  # produced it and the background writer that uploads it, so a race is a
+  # corrupted entry served to every build afterwards rather than a crash
+  # somebody notices.
+  race:
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+    with:
+      recipes: '["race"]'
+
+  # Stable name for branch protection: the matrix reports as
+  # "recipes / lint" and so on, so a required context called "check"
+  # would never arrive and every PR would hang waiting for it. It cannot
+  # live in the reusable workflow either — a required context has to be
+  # produced by a job in this file.
+  check:
+    needs: [recipes, race]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          [ "${{ needs.recipes.result }}" = "success" ] &&
+          [ "${{ needs.race.result }}" = "success" ]

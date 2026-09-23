@@ -59,11 +59,13 @@ type Frontends struct {
 	Bazel  BazelFrontend  `yaml:"bazel"`
 }
 
+// GoFrontend is the two Go caches: compiled actions and downloaded modules.
 type GoFrontend struct {
 	Build GoBuild `yaml:"build"`
 	Mod   GoMod   `yaml:"mod"`
 }
 
+// GoBuild is the Go build cache, reached by the runner agent over Connect.
 type GoBuild struct {
 	Enabled bool `yaml:"enabled"`
 	// LegacyPrefix is consulted on a bucket miss. A bucket already warmed by
@@ -72,6 +74,7 @@ type GoBuild struct {
 	LegacyPrefix string `yaml:"legacyPrefix"`
 }
 
+// GoMod is the Go module and sumdb proxy.
 type GoMod struct {
 	Enabled      bool          `yaml:"enabled"`
 	Upstream     string        `yaml:"upstream"`
@@ -80,6 +83,7 @@ type GoMod struct {
 	LegacyPrefix string        `yaml:"legacyPrefix"`
 }
 
+// MavenFrontend proxies one or more Maven repositories, each at its own path.
 type MavenFrontend struct {
 	Enabled bool `yaml:"enabled"`
 	// Upstreams is name -> base URL; each becomes /maven/<name>.
@@ -88,11 +92,15 @@ type MavenFrontend struct {
 	NegativeTTL time.Duration     `yaml:"negativeTTL"`
 }
 
+// GradleFrontend is Gradle's two needs: its remote build cache, and the
+// wrapper distribution every cold job downloads.
 type GradleFrontend struct {
 	Build GradleBuild `yaml:"build"`
 	Dist  GradleDist  `yaml:"dist"`
 }
 
+// GradleBuild is Gradle's remote HTTP build cache, which needs no agent:
+// Gradle speaks it natively.
 type GradleBuild struct {
 	Enabled bool `yaml:"enabled"`
 	// ReadOnly refuses PUT, for an estate where only CI may fill the cache.
@@ -100,6 +108,7 @@ type GradleBuild struct {
 	MaxEntry int64 `yaml:"maxEntry"`
 }
 
+// GradleDist serves wrapper distributions from an allow list.
 type GradleDist struct {
 	Enabled bool `yaml:"enabled"`
 	// Allow is the list of upstream prefixes this may fetch. Anything else
@@ -107,6 +116,8 @@ type GradleDist struct {
 	Allow []string `yaml:"allow"`
 }
 
+// NixFrontend is a nix binary cache standing in front of the upstreams, as a
+// substituter rather than a proxy -- so no TLS is intercepted.
 type NixFrontend struct {
 	Enabled   bool     `yaml:"enabled"`
 	Upstreams []string `yaml:"upstreams"`
@@ -116,12 +127,15 @@ type NixFrontend struct {
 	NegativeTTL time.Duration `yaml:"negativeTTL"`
 }
 
+// NPMFrontend proxies an npm registry.
 type NPMFrontend struct {
 	Enabled     bool          `yaml:"enabled"`
 	Upstream    string        `yaml:"upstream"`
 	MetadataTTL time.Duration `yaml:"metadataTTL"`
 }
 
+// BazelFrontend serves the cache half of the Bazel Remote Execution API,
+// which is what moon's task cache speaks.
 type BazelFrontend struct {
 	Enabled bool `yaml:"enabled"`
 }
@@ -174,11 +188,14 @@ type Service struct {
 	Admin int `yaml:"admin"`
 }
 
+// Server is the data listener's own limits.
 type Server struct {
 	Concurrency  int           `yaml:"concurrency"`
 	DrainTimeout time.Duration `yaml:"drainTimeout"`
 }
 
+// Telemetry is where metrics and traces go. Empty exports nothing and still
+// counts everything in process.
 type Telemetry struct {
 	OTLPEndpoint string  `yaml:"otlpEndpoint"`
 	TraceRatio   float64 `yaml:"traceRatio"`

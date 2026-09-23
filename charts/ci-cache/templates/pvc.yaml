@@ -1,0 +1,23 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+# The disk tier. ReadWriteOnce on purpose: the tier is a local filesystem with
+# a local index, and two pods writing one directory would each keep an index of
+# what the other was evicting. The Deployment's Recreate strategy is the other
+# half of that decision.
+#
+# Sized for the working set, not the corpus. Everything is in the bucket; this
+# holds what was asked for recently, and `gc` keeps it inside the volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ci-cache.claimName" . }}
+  labels:
+    {{- include "ci-cache.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

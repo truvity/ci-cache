@@ -1,0 +1,47 @@
+{{- if .Values.networkPolicy.enabled }}
+# Who may reach the cache, and on which port.
+#
+# The DATA port only. The admin port carries the wipes, and it appears in no
+# rule here at all -- not as a second entry, not beside the data port in a
+# shared `ports:` list. A consumer that cannot name it cannot reach it by
+# guessing, and nobody can widen this policy by copying a line.
+#
+# An EMPTY `consumerNamespaces` renders a policy with NO ingress rules, which
+# selects these pods and admits nobody. That is the safe reading and it is
+# written out below rather than left to fall out of a range, because the
+# classic bug is the inversion: a rule whose `from` list came out empty is not
+# "nobody", it is EVERY pod in the cluster, and it looks identical in a diff.
+#
+# Egress is left alone. `policyTypes` names Ingress only, so the cache can
+# still reach its bucket, its upstreams and its OTLP collector; a policy that
+# listed Egress and forgot one of those would fail as a cache that answers
+# every request with a miss.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ci-cache.fullname" . }}
+  labels:
+    {{- include "ci-cache.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ci-cache.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  {{- if .Values.networkPolicy.consumerNamespaces }}
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.consumerNamespaces }}
+        # kubernetes.io/metadata.name is set by the kubelet on every
+        # Namespace, so it needs no label anyone has to remember to apply.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.data }}
+  {{- else }}
+  # No consumer namespaces named: no rules, so nothing gets in.
+  ingress: []
+  {{- end }}
+{{- end }}

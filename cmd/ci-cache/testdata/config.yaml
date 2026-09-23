@@ -1,0 +1,77 @@
+# Every field in the schema, set to something the defaults do not say.
+#
+# It is exhaustive on purpose: the test that reads it asserts that no value
+# here equals its default, so a field that stops being loaded cannot pass by
+# happening to match.
+store:
+  bucket: ci-cache-test
+  region: auto
+  endpoint: https://example.r2.cloudflarestorage.com
+  pathStyle: true
+  keyPrefix: estate/
+frontends:
+  go:
+    build:
+      enabled: false
+      legacyPrefix: old/go/build/
+    mod:
+      enabled: false
+      upstream: https://proxy.example.test
+      sumdb: sum.example.test
+      listTTL: 45s
+      legacyPrefix: old/go/mod/
+  maven:
+    enabled: true
+    upstreams:
+      central: https://repo1.example.test/maven2
+      internal: https://nexus.example.test/repo
+    metadataTTL: 3m
+    negativeTTL: 90s
+  gradle:
+    build:
+      enabled: true
+      readOnly: true
+      maxEntry: 268435456
+    dist:
+      enabled: true
+      allow:
+        - https://services.example.test/distributions/
+        - https://mirror.example.test/gradle/
+  nix:
+    enabled: true
+    upstreams:
+      - https://cache.example.test
+    priority: 5
+    negativeTTL: 30s
+  npm:
+    enabled: true
+    upstream: https://registry.example.test
+    metadataTTL: 2m
+  bazel:
+    enabled: true
+persistence:
+  dir: /srv/cache
+  ephemeralIsAcceptable: true
+gc:
+  floor: 15
+  high: 90
+  low: 70
+  budgetBytes: 10737418240
+  budgets:
+    go: 60
+    npm: 20
+upload:
+  concurrency: 16
+  queue: 2048
+  queueBytes: 4294967296
+  minSize: 4096
+service:
+  data: 9090
+  admin: 9091
+server:
+  concurrency: 512
+  drainTimeout: 1m
+telemetry:
+  otlpEndpoint: http://otel.example.test:4318
+  traceRatio: 0.25
+logLevel: debug

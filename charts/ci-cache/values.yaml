@@ -1,0 +1,256 @@
+# The cache's configuration, which is `config.Config` and nothing else.
+#
+# Every key under `store`, `frontends`, `persistence`, `gc`, `upload`,
+# `service`, `server`, `telemetry` and `logLevel` is a field of that struct,
+# spelled the same way, and reaches the binary as CI_CACHE_<SECTION>_<NAME>.
+# One schema for the YAML file, the flags, the environment and this chart is
+# what keeps the deploy pages from describing a server that does not exist.
+# Everything else here -- the image, the volume, the Services, the policy --
+# is how Kubernetes is told to run it.
+
+image:
+  # ko builds one image per command and appends the command's import-path base
+  # to KO_DOCKER_REPO, so ./cmd/ci-cache publishes under .../ci-cache/ci-cache.
+  repository: ghcr.io/truvity/ci-cache/ci-cache
+  tag: ""        # empty takes the chart's appVersion
+  pullPolicy: IfNotPresent
+
+# The bucket behind the disk. The disk is the fast copy and the bucket is the
+# durable one, so an estate can lose the volume, the node or the whole cluster
+# and get a cold cache rather than no cache.
+store:
+  # There is no default. A bucket named here by the chart would be somebody
+  # else's, and the chart refuses to render without one.
+  bucket: ""
+  # Required, always. Inside a pod the SDK's own resolution is whatever the
+  # environment happens to carry, which differs between a node with IMDS and
+  # one without; and Cloudflare R2 refuses a bucket-location lookup outright,
+  # so it must be told "auto".
+  region: ""
+  # Empty keeps AWS. Setting it also turns off the SDK's default request and
+  # response checksums, which every store but AWS rejects. It is an absolute
+  # URL with a scheme -- an endpoint written as a bare host reaches the SDK as
+  # a path and the first PUT fails with something unrelated.
+  endpoint: ""
+  # Address the bucket as endpoint/bucket/key. This is a property of the
+  # store's certificate -- does its wildcard cover a bucket subdomain? -- and
+  # not of the endpoint, which is why it is its own switch and not inferred.
+  # R2 wants it on: *.r2.cloudflarestorage.com does not cover a bucket below
+  # the account, and a virtual-hosted request there fails the TLS handshake.
+  pathStyle: false
+  # In front of every key. Empty is the natural layout (go/build/..., nix/...);
+  # set it for a bucket that already holds something else, or the first listing
+  # the garbage collector runs walks that something else too.
+  keyPrefix: ""
+  # Static credentials for a store with no pod identity, as AWS_ACCESS_KEY_ID /
+  # AWS_SECRET_ACCESS_KEY (and optionally AWS_SESSION_TOKEN) in a Secret this
+  # chart does not create, handed to the container through envFrom. Empty keeps
+  # the pod's ambient identity, which is what to use on AWS: asking for keys
+  # there is asking for the thing pod identity exists to remove. Naming both a
+  # Secret here and an identity annotation on the service account is two
+  # answers to one question and the chart refuses it.
+  existingSecret: ""
+
+# Which protocols this installation serves. Each is a front-end over the same
+# two tiers; turning one on costs a route and whatever it caches, and turning
+# one off makes its clients talk to their upstream directly rather than fail.
+frontends:
+  go:
+    build:
+      # The Go build cache, over GOCACHEPROG. This is the one that pays for the
+      # whole service, and the one that must not sit on a volume that empties.
+      enabled: true
+      # Consulted on a bucket miss only. A bucket already warmed by
+      # go-cache-plugin keeps serving through the switch; writes always go to
+      # the new layout, so the old prefix decays instead of being migrated.
+      legacyPrefix: ""
+    mod:
+      # The module proxy and the checksum database mirror.
+      enabled: true
+      upstream: https://proxy.golang.org
+      # The mirror still verifies against this. Emptying it does not make the
+      # proxy faster, it makes it unverified.
+      sumdb: sum.golang.org
+      # @v/list and @latest are the only answers that change under a fixed
+      # version, so they are the only ones with a lifetime. Longer than a
+      # release cadence and a freshly published module looks missing.
+      listTTL: 10m
+      legacyPrefix: ""
+  maven:
+    enabled: false
+    # name -> base URL; each becomes /maven/<name>. A release artifact never
+    # changes, so only the metadata below has a lifetime. With the front-end on
+    # and no upstream there is nothing to proxy, and the chart refuses it.
+    upstreams: {}
+    #  central: https://repo.maven.apache.org/maven2
+    # maven-metadata.xml is how a SNAPSHOT and a version range are resolved:
+    # cache it too long and a just-published version stays invisible.
+    metadataTTL: 10m
+    # How long a 404 is remembered. Without it every miss for an artifact that
+    # does not exist -- which a multi-repository resolve produces by design --
+    # is a round trip to the upstream, every time.
+    negativeTTL: 5m
+  gradle:
+    build:
+      enabled: false
+      # Refuse PUT. For an estate where only CI may fill the cache, so that a
+      # developer's machine can read a build everybody shares but not poison
+      # it: Gradle's build cache is keyed by inputs the client computes.
+      readOnly: false
+      # An entry larger than this is refused rather than stored. A single
+      # oversized output otherwise evicts everything else in one write.
+      maxEntry: 536870912
+    dist:
+      # The Gradle distribution proxy, for wrapper downloads.
+      enabled: false
+      # The upstream prefixes this may fetch. A distribution proxy with no
+      # allow list is an open relay -- anyone who can reach the data port can
+      # make the cache fetch any URL and serve it back from a name you trust --
+      # so the chart refuses the front-end without one.
+      allow:
+        - https://services.gradle.org/distributions/
+  nix:
+    enabled: false
+    upstreams:
+      - https://cache.nixos.org
+    # What nix-cache-info advertises. Nix prefers the LOWEST number and
+    # cache.nixos.org says 40, so anything below 40 wins; above it and the
+    # substituter is configured, consulted second, and effectively unused.
+    priority: 10
+    # A miss on a store path is the normal case -- most paths are built
+    # locally and were never in any cache -- so without this the front-end
+    # forwards a request upstream for every path Nix asks about.
+    negativeTTL: 5m
+  npm:
+    enabled: false
+    upstream: https://registry.npmjs.org
+    # A tarball is immutable; the packument is not. This is how long a new
+    # version can stay invisible to an install that asks for a range.
+    metadataTTL: 5m
+  bazel:
+    # The Bazel remote cache (HTTP/1.1 action cache and CAS). Content
+    # addressed, so it has nothing to configure but whether it is mounted.
+    enabled: false
+
+# The disk tier's volume.
+persistence:
+  # Off gives an emptyDir, which empties on every restart. The chart refuses
+  # that while a BUILD cache front-end is on: a cache that keeps nothing is
+  # the exact shape this service exists to replace, and it is invisible --
+  # every request still answers, just always with a miss.
+  enabled: true
+  # The working set, not the corpus. The bucket holds everything; this holds
+  # what was asked for recently, and the garbage collector keeps it inside the
+  # volume rather than the volume being sized for the corpus.
+  size: 50Gi
+  storageClass: ""
+  # A claim made elsewhere -- by a StorageClass this chart should not name, or
+  # one that already holds a warm cache. Set it and the chart creates none.
+  existingClaim: ""
+  # Where the disk tier lives inside the container. It rarely moves; the
+  # binary refuses a path that looks like an emptyDir mount (/tmp, /var/tmp,
+  # /dev/shm) while the build cache is on.
+  dir: /data
+  # Says that a volume which does not survive a restart is intended: a
+  # throwaway install, or a runner-local agent that is meant to be cold. It is
+  # the only way past the refusal above, and it is explicit so that nobody
+  # reaches it by accident.
+  ephemeralIsAcceptable: false
+
+# How the disk tier is kept inside its volume. The budget is derived from
+# statfs, so resizing the volume needs no change here.
+gc:
+  # The fraction of the filesystem left free, as a percentage. A full volume
+  # is not a slow cache, it is a failing writer -- and on many filesystems the
+  # failure arrives long before 100%.
+  floor: 10
+  # Percentages of the budget: eviction starts at high and runs until low. A
+  # narrow gap makes the collector run constantly; low must stay below high,
+  # and the chart refuses otherwise.
+  high: 95
+  low: 85
+  # Overrides the derived budget, for a volume shared with something else.
+  # Zero derives it.
+  budgetBytes: 0
+  # Caps one front-end as a percentage of the whole; a front-end over its cap
+  # is evicted before anything else. Empty lets them compete, which is right
+  # until one of them -- usually the Nix substituter -- crowds the rest out.
+  budgets: {}
+  #  nix: 30
+
+# The write-behind queue in front of the bucket. A request is answered from
+# disk and the bucket is filled afterwards, so an upload that is slow costs
+# durability, never latency.
+upload:
+  concurrency: 8
+  # How many objects may wait. Full, the writer drops the oldest rather than
+  # blocking the request that produced it -- a dropped upload is a cold entry
+  # next time, and a blocked request is a build that hangs.
+  queue: 1024
+  # And how many bytes, because a queue counted in objects says nothing about
+  # memory when one of them is a 500MB archive.
+  queueBytes: 2147483648
+  # Skip the bucket below this size. A round trip per hundred-byte object
+  # costs more than re-deriving it. Zero uploads everything.
+  minSize: 0
+
+# The two listeners. They are different ports because they are different
+# audiences, and the difference is enforced by the NetworkPolicy below.
+service:
+  # Every front-end. Reachable by every CI job.
+  data: 8080
+  # Stats, List, the wipes and the UI. Never in a consumer's policy: a job
+  # that can wipe can empty the cache for everyone, quietly, and the next
+  # hundred builds pay for it. The chart refuses to render these equal.
+  admin: 8081
+
+server:
+  # In-flight requests. A cache is asked for the same key by everything at
+  # once, and unbounded concurrency turns a thundering herd into an OOM.
+  concurrency: 256
+  # How long the server keeps serving after SIGTERM. The pod's termination
+  # grace is this plus ten seconds, so that the kill arrives after the drain
+  # rather than during it.
+  drainTimeout: 30s
+
+# Who may reach the data port.
+networkPolicy:
+  enabled: true
+  # The namespaces whose pods may use the cache, matched on the well-known
+  # kubernetes.io/metadata.name label the kubelet sets.
+  #
+  # EMPTY ADMITS NOBODY. A policy that selects these pods and lists no rule
+  # denies all ingress, which is the safe reading; the classic bug is the
+  # other one, where an empty list renders a rule with an empty `from` and
+  # admits the whole cluster. Name the namespaces, or leave the policy off.
+  consumerNamespaces: []
+
+serviceAccount:
+  create: true
+  name: ci-cache
+  # Pod identity goes here: eks.amazonaws.com/role-arn, or the equivalent.
+  # This and `store.existingSecret` are two identities for one process, and
+  # the chart refuses both at once -- whichever the SDK happened to prefer
+  # would be a property of its version, not of this file.
+  annotations: {}
+
+telemetry:
+  # Empty sends nothing and costs nothing.
+  otlpEndpoint: ""
+  # A cache serves a very large number of very short requests. Tracing them
+  # all costs more than the requests do, so this samples.
+  traceRatio: 0.01
+
+logLevel: info
+
+# Left empty on purpose. A cache's working set is the volume, not the heap,
+# and a limit copied from another service is how a cache starts getting OOM
+# killed under exactly the load it was installed for. Measure, then set.
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+# A cache that is evicted takes every build with it while it refills. On a
+# cluster with preemption, give it a class above the jobs it serves.
+priorityClassName: ""

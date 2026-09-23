@@ -1,0 +1,16 @@
+apiVersion: v2
+name: ci-cache
+description: One cache for every build tool — a disk tier over a bucket, serving the Go, Maven, Gradle, Nix, npm and Bazel protocols from one process.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/truvity/ci-cache
+sources:
+  - https://github.com/truvity/ci-cache
+keywords:
+  - cache
+  - ci
+  - go
+  - gradle
+  - nix
+  - s3

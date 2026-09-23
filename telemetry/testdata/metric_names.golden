@@ -1,0 +1,13 @@
+cicache.agent.degraded
+cicache.bytes
+cicache.disk.budget_bytes
+cicache.disk.entries
+cicache.disk.used_bytes
+cicache.gc.duration
+cicache.gc.evicted_bytes
+cicache.gc.runs
+cicache.get
+cicache.latency
+cicache.negative.entries
+cicache.put
+cicache.upload.queue_depth

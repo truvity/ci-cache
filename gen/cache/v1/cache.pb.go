@@ -551,8 +551,8 @@ const file_cache_v1_cache_proto_rawDesc = "" +
 	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\x06\n" +
 	"\x04part\"!\n" +
 	"\vPutResponse\x12\x12\n" +
-	"\x04size\x18\x01 \x01(\x03R\x04size2\xaa\x01\n" +
-	"\x05Cache\x125\n" +
+	"\x04size\x18\x01 \x01(\x03R\x04size2\xb1\x01\n" +
+	"\fCacheService\x125\n" +
 	"\x04Stat\x12\x15.cache.v1.StatRequest\x1a\x16.cache.v1.StatResponse\x124\n" +
 	"\x03Get\x12\x14.cache.v1.GetRequest\x1a\x15.cache.v1.GetResponse0\x01\x124\n" +
 	"\x03Put\x12\x14.cache.v1.PutRequest\x1a\x15.cache.v1.PutResponse(\x01B\x8d\x01\n" +
@@ -589,12 +589,12 @@ var file_cache_v1_cache_proto_depIdxs = []int32{
 	0, // 2: cache.v1.GetResponse.meta:type_name -> cache.v1.Meta
 	0, // 3: cache.v1.PutHeader.meta:type_name -> cache.v1.Meta
 	5, // 4: cache.v1.PutRequest.header:type_name -> cache.v1.PutHeader
-	1, // 5: cache.v1.Cache.Stat:input_type -> cache.v1.StatRequest
-	3, // 6: cache.v1.Cache.Get:input_type -> cache.v1.GetRequest
-	6, // 7: cache.v1.Cache.Put:input_type -> cache.v1.PutRequest
-	2, // 8: cache.v1.Cache.Stat:output_type -> cache.v1.StatResponse
-	4, // 9: cache.v1.Cache.Get:output_type -> cache.v1.GetResponse
-	7, // 10: cache.v1.Cache.Put:output_type -> cache.v1.PutResponse
+	1, // 5: cache.v1.CacheService.Stat:input_type -> cache.v1.StatRequest
+	3, // 6: cache.v1.CacheService.Get:input_type -> cache.v1.GetRequest
+	6, // 7: cache.v1.CacheService.Put:input_type -> cache.v1.PutRequest
+	2, // 8: cache.v1.CacheService.Stat:output_type -> cache.v1.StatResponse
+	4, // 9: cache.v1.CacheService.Get:output_type -> cache.v1.GetResponse
+	7, // 10: cache.v1.CacheService.Put:output_type -> cache.v1.PutResponse
 	8, // [8:11] is the sub-list for method output_type
 	5, // [5:8] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name

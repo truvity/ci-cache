@@ -1,0 +1,132 @@
+{{- include "ci-cache.checks" . -}}
+# One process, one volume, one replica.
+#
+# A second replica would not be a second cache but half a cache twice: the
+# disk tier is local, so two pods behind one Service each answer from what
+# they happen to hold, and every entry is written and evicted twice. Scaling
+# a cache means a bigger volume or a tier closer to the runner, never more
+# pods -- which is why `replicas` is not a value.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ci-cache.fullname" . }}
+  labels:
+    {{- include "ci-cache.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  {{- if .Values.persistence.enabled }}
+  # One pod at a time may hold a ReadWriteOnce volume, so the old pod goes
+  # before the new one arrives. A rolling update deadlocks: the new pod waits
+  # for a claim the old pod will not release until the new pod is ready.
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ci-cache.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ci-cache.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "ci-cache.serviceAccountName" . }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      # The drain plus ten seconds. The server keeps serving for
+      # `server.drainTimeout` after SIGTERM so that a build in flight finishes
+      # reading; a grace period equal to the drain would have the kill land in
+      # the same instant, and a truncated response is a corrupt cache entry.
+      terminationGracePeriodSeconds: {{ add (include "ci-cache.seconds" .Values.server.drainTimeout | int) 10 }}
+      securityContext:
+        # Not values. A cache has no reason to want any of this relaxed, and
+        # an installation that needs it relaxed has found a bug worth fixing
+        # rather than a knob worth turning. The numbers are the nonroot user
+        # of the distroless base ko builds on; fsGroup is what lets the pod
+        # write the volume it is given.
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ci-cache
+          image: {{ include "ci-cache.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- include "ci-cache.env" . | nindent 12 }}
+          {{- with .Values.store.existingSecret }}
+          # envFrom rather than named variables, so that a session token is
+          # carried too without this chart having to name every variable the
+          # SDK may read.
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
+          ports:
+            - name: data
+              containerPort: {{ .Values.service.data }}
+              protocol: TCP
+            # Named and exposed, but never reachable from a consumer
+            # namespace: see the NetworkPolicy.
+            - name: admin
+              containerPort: {{ .Values.service.admin }}
+              protocol: TCP
+          # Liveness says the process is alive; readiness says the disk tier is
+          # open and the bucket answered. They are different questions, and
+          # answering both with /healthz would restart a pod whose bucket was
+          # briefly unreachable -- turning somebody else's outage into a cold
+          # cache.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: data
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: data
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.dir }}
+            # The root filesystem is read-only, and an upload that has to be
+            # buffered needs somewhere to put it.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "ci-cache.claimName" . }}
+          {{- else }}
+          # Acknowledged as disposable by `persistence.ephemeralIsAcceptable`.
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

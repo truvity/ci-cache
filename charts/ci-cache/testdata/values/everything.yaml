@@ -1,0 +1,88 @@
+# Every front-end on, every optional value set: the render that would show a
+# field the chart forgot to pass through, and the one a new front-end has to
+# be added to.
+store:
+  bucket: ci-cache-example
+  region: eu-west-1
+  keyPrefix: shared/
+
+frontends:
+  go:
+    build:
+      enabled: true
+      legacyPrefix: go-cache-plugin/
+    mod:
+      enabled: true
+      listTTL: 5m
+      legacyPrefix: go-cache-plugin/mod/
+  maven:
+    enabled: true
+    upstreams:
+      central: https://repo.maven.apache.org/maven2
+      gradle-plugins: https://plugins.gradle.org/m2
+  gradle:
+    build:
+      enabled: true
+      readOnly: true
+      maxEntry: 268435456
+    dist:
+      enabled: true
+      allow:
+        - https://services.gradle.org/distributions/
+  nix:
+    enabled: true
+    upstreams:
+      - https://cache.nixos.org
+    priority: 5
+  npm:
+    enabled: true
+  bazel:
+    enabled: true
+
+persistence:
+  size: 500Gi
+  storageClass: fast
+
+gc:
+  floor: 15
+  high: 90
+  low: 70
+  budgets:
+    nix: 30
+    maven: 20
+
+upload:
+  concurrency: 16
+  minSize: 4096
+
+server:
+  concurrency: 512
+  drainTimeout: 2m
+
+networkPolicy:
+  enabled: true
+  consumerNamespaces: [ci, build, devel]
+
+telemetry:
+  otlpEndpoint: http://otel-collector:4317
+  traceRatio: 0.05
+
+logLevel: debug
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    memory: 4Gi
+
+nodeSelector:
+  kubernetes.io/arch: amd64
+tolerations:
+  - key: dedicated
+    operator: Equal
+    value: ci
+    effect: NoSchedule
+podAnnotations:
+  example.com/scrape: "true"
+priorityClassName: ci-cache

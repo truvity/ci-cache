@@ -1,0 +1,25 @@
+name: Devbox Update
+
+on:
+  schedule:
+    - cron: "0 1 * * *" # daily: go directive aligned every day, full devbox update on Monday (mode auto)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The shared workflow selects the App by this repository's own
+  # RENOVATE_CLIENT_ID variable, and `secrets: inherit` is what makes the
+  # private key reach it at all. A hand-rolled copy of this job -- eight
+  # repositories carried one -- passed an `app-id:` secret the org no longer
+  # sets, so every run died on "The 'client-id' (or deprecated 'app-id')
+  # input must be set to a non-empty string" before it reached devbox.
+  #
+  # What it buys this repository specifically: devbox.lock and devbox.json
+  # must move together, or every CI job fails with "modified the working
+  # tree" -- and a lock nothing updates is a toolchain that only ever moves
+  # by somebody remembering to move it.
+  update:
+    uses: truvity/ci-workflows/.github/workflows/devbox-update.yaml@ee73220eb9cb488f4a19f636307cddc85fc602bc # v2.16.1
+    secrets: inherit

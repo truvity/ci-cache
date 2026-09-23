@@ -31,8 +31,8 @@ import (
 const _ = connect.IsAtLeastVersion1_13_0
 
 const (
-	// AdminName is the fully-qualified name of the Admin service.
-	AdminName = "admin.v1.Admin"
+	// AdminServiceName is the fully-qualified name of the AdminService service.
+	AdminServiceName = "admin.v1.AdminService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -43,20 +43,20 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// AdminStatsProcedure is the fully-qualified name of the Admin's Stats RPC.
-	AdminStatsProcedure = "/admin.v1.Admin/Stats"
-	// AdminListProcedure is the fully-qualified name of the Admin's List RPC.
-	AdminListProcedure = "/admin.v1.Admin/List"
-	// AdminWipeDiskProcedure is the fully-qualified name of the Admin's WipeDisk RPC.
-	AdminWipeDiskProcedure = "/admin.v1.Admin/WipeDisk"
-	// AdminWipeBucketProcedure is the fully-qualified name of the Admin's WipeBucket RPC.
-	AdminWipeBucketProcedure = "/admin.v1.Admin/WipeBucket"
-	// AdminInvalidateProcedure is the fully-qualified name of the Admin's Invalidate RPC.
-	AdminInvalidateProcedure = "/admin.v1.Admin/Invalidate"
+	// AdminServiceStatsProcedure is the fully-qualified name of the AdminService's Stats RPC.
+	AdminServiceStatsProcedure = "/admin.v1.AdminService/Stats"
+	// AdminServiceListProcedure is the fully-qualified name of the AdminService's List RPC.
+	AdminServiceListProcedure = "/admin.v1.AdminService/List"
+	// AdminServiceWipeDiskProcedure is the fully-qualified name of the AdminService's WipeDisk RPC.
+	AdminServiceWipeDiskProcedure = "/admin.v1.AdminService/WipeDisk"
+	// AdminServiceWipeBucketProcedure is the fully-qualified name of the AdminService's WipeBucket RPC.
+	AdminServiceWipeBucketProcedure = "/admin.v1.AdminService/WipeBucket"
+	// AdminServiceInvalidateProcedure is the fully-qualified name of the AdminService's Invalidate RPC.
+	AdminServiceInvalidateProcedure = "/admin.v1.AdminService/Invalidate"
 )
 
-// AdminClient is a client for the admin.v1.Admin service.
-type AdminClient interface {
+// AdminServiceClient is a client for the admin.v1.AdminService service.
+type AdminServiceClient interface {
 	Stats(context.Context, *connect.Request[v1.StatsRequest]) (*connect.Response[v1.StatsResponse], error)
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	WipeDisk(context.Context, *connect.Request[v1.WipeDiskRequest]) (*connect.Response[v1.WipeDiskResponse], error)
@@ -64,52 +64,52 @@ type AdminClient interface {
 	Invalidate(context.Context, *connect.Request[v1.InvalidateRequest]) (*connect.Response[v1.InvalidateResponse], error)
 }
 
-// NewAdminClient constructs a client for the admin.v1.Admin service. By default, it uses the
-// Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
+// NewAdminServiceClient constructs a client for the admin.v1.AdminService service. By default, it
+// uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses, and sends
 // uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or
 // connect.WithGRPCWeb() options.
 //
 // The URL supplied here should be the base URL for the Connect or gRPC server (for example,
 // http://api.acme.com or https://acme.com/grpc).
-func NewAdminClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AdminClient {
+func NewAdminServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AdminServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
-	adminMethods := v1.File_admin_v1_admin_proto.Services().ByName("Admin").Methods()
-	return &adminClient{
+	adminServiceMethods := v1.File_admin_v1_admin_proto.Services().ByName("AdminService").Methods()
+	return &adminServiceClient{
 		stats: connect.NewClient[v1.StatsRequest, v1.StatsResponse](
 			httpClient,
-			baseURL+AdminStatsProcedure,
-			connect.WithSchema(adminMethods.ByName("Stats")),
+			baseURL+AdminServiceStatsProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("Stats")),
 			connect.WithClientOptions(opts...),
 		),
 		list: connect.NewClient[v1.ListRequest, v1.ListResponse](
 			httpClient,
-			baseURL+AdminListProcedure,
-			connect.WithSchema(adminMethods.ByName("List")),
+			baseURL+AdminServiceListProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		wipeDisk: connect.NewClient[v1.WipeDiskRequest, v1.WipeDiskResponse](
 			httpClient,
-			baseURL+AdminWipeDiskProcedure,
-			connect.WithSchema(adminMethods.ByName("WipeDisk")),
+			baseURL+AdminServiceWipeDiskProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("WipeDisk")),
 			connect.WithClientOptions(opts...),
 		),
 		wipeBucket: connect.NewClient[v1.WipeBucketRequest, v1.WipeBucketResponse](
 			httpClient,
-			baseURL+AdminWipeBucketProcedure,
-			connect.WithSchema(adminMethods.ByName("WipeBucket")),
+			baseURL+AdminServiceWipeBucketProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("WipeBucket")),
 			connect.WithClientOptions(opts...),
 		),
 		invalidate: connect.NewClient[v1.InvalidateRequest, v1.InvalidateResponse](
 			httpClient,
-			baseURL+AdminInvalidateProcedure,
-			connect.WithSchema(adminMethods.ByName("Invalidate")),
+			baseURL+AdminServiceInvalidateProcedure,
+			connect.WithSchema(adminServiceMethods.ByName("Invalidate")),
 			connect.WithClientOptions(opts...),
 		),
 	}
 }
 
-// adminClient implements AdminClient.
-type adminClient struct {
+// adminServiceClient implements AdminServiceClient.
+type adminServiceClient struct {
 	stats      *connect.Client[v1.StatsRequest, v1.StatsResponse]
 	list       *connect.Client[v1.ListRequest, v1.ListResponse]
 	wipeDisk   *connect.Client[v1.WipeDiskRequest, v1.WipeDiskResponse]
@@ -117,33 +117,33 @@ type adminClient struct {
 	invalidate *connect.Client[v1.InvalidateRequest, v1.InvalidateResponse]
 }
 
-// Stats calls admin.v1.Admin.Stats.
-func (c *adminClient) Stats(ctx context.Context, req *connect.Request[v1.StatsRequest]) (*connect.Response[v1.StatsResponse], error) {
+// Stats calls admin.v1.AdminService.Stats.
+func (c *adminServiceClient) Stats(ctx context.Context, req *connect.Request[v1.StatsRequest]) (*connect.Response[v1.StatsResponse], error) {
 	return c.stats.CallUnary(ctx, req)
 }
 
-// List calls admin.v1.Admin.List.
-func (c *adminClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
+// List calls admin.v1.AdminService.List.
+func (c *adminServiceClient) List(ctx context.Context, req *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
 	return c.list.CallUnary(ctx, req)
 }
 
-// WipeDisk calls admin.v1.Admin.WipeDisk.
-func (c *adminClient) WipeDisk(ctx context.Context, req *connect.Request[v1.WipeDiskRequest]) (*connect.Response[v1.WipeDiskResponse], error) {
+// WipeDisk calls admin.v1.AdminService.WipeDisk.
+func (c *adminServiceClient) WipeDisk(ctx context.Context, req *connect.Request[v1.WipeDiskRequest]) (*connect.Response[v1.WipeDiskResponse], error) {
 	return c.wipeDisk.CallUnary(ctx, req)
 }
 
-// WipeBucket calls admin.v1.Admin.WipeBucket.
-func (c *adminClient) WipeBucket(ctx context.Context, req *connect.Request[v1.WipeBucketRequest]) (*connect.Response[v1.WipeBucketResponse], error) {
+// WipeBucket calls admin.v1.AdminService.WipeBucket.
+func (c *adminServiceClient) WipeBucket(ctx context.Context, req *connect.Request[v1.WipeBucketRequest]) (*connect.Response[v1.WipeBucketResponse], error) {
 	return c.wipeBucket.CallUnary(ctx, req)
 }
 
-// Invalidate calls admin.v1.Admin.Invalidate.
-func (c *adminClient) Invalidate(ctx context.Context, req *connect.Request[v1.InvalidateRequest]) (*connect.Response[v1.InvalidateResponse], error) {
+// Invalidate calls admin.v1.AdminService.Invalidate.
+func (c *adminServiceClient) Invalidate(ctx context.Context, req *connect.Request[v1.InvalidateRequest]) (*connect.Response[v1.InvalidateResponse], error) {
 	return c.invalidate.CallUnary(ctx, req)
 }
 
-// AdminHandler is an implementation of the admin.v1.Admin service.
-type AdminHandler interface {
+// AdminServiceHandler is an implementation of the admin.v1.AdminService service.
+type AdminServiceHandler interface {
 	Stats(context.Context, *connect.Request[v1.StatsRequest]) (*connect.Response[v1.StatsResponse], error)
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error)
 	WipeDisk(context.Context, *connect.Request[v1.WipeDiskRequest]) (*connect.Response[v1.WipeDiskResponse], error)
@@ -151,80 +151,80 @@ type AdminHandler interface {
 	Invalidate(context.Context, *connect.Request[v1.InvalidateRequest]) (*connect.Response[v1.InvalidateResponse], error)
 }
 
-// NewAdminHandler builds an HTTP handler from the service implementation. It returns the path on
-// which to mount the handler and the handler itself.
+// NewAdminServiceHandler builds an HTTP handler from the service implementation. It returns the
+// path on which to mount the handler and the handler itself.
 //
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
-func NewAdminHandler(svc AdminHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	adminMethods := v1.File_admin_v1_admin_proto.Services().ByName("Admin").Methods()
-	adminStatsHandler := connect.NewUnaryHandler(
-		AdminStatsProcedure,
+func NewAdminServiceHandler(svc AdminServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	adminServiceMethods := v1.File_admin_v1_admin_proto.Services().ByName("AdminService").Methods()
+	adminServiceStatsHandler := connect.NewUnaryHandler(
+		AdminServiceStatsProcedure,
 		svc.Stats,
-		connect.WithSchema(adminMethods.ByName("Stats")),
+		connect.WithSchema(adminServiceMethods.ByName("Stats")),
 		connect.WithHandlerOptions(opts...),
 	)
-	adminListHandler := connect.NewUnaryHandler(
-		AdminListProcedure,
+	adminServiceListHandler := connect.NewUnaryHandler(
+		AdminServiceListProcedure,
 		svc.List,
-		connect.WithSchema(adminMethods.ByName("List")),
+		connect.WithSchema(adminServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
-	adminWipeDiskHandler := connect.NewUnaryHandler(
-		AdminWipeDiskProcedure,
+	adminServiceWipeDiskHandler := connect.NewUnaryHandler(
+		AdminServiceWipeDiskProcedure,
 		svc.WipeDisk,
-		connect.WithSchema(adminMethods.ByName("WipeDisk")),
+		connect.WithSchema(adminServiceMethods.ByName("WipeDisk")),
 		connect.WithHandlerOptions(opts...),
 	)
-	adminWipeBucketHandler := connect.NewUnaryHandler(
-		AdminWipeBucketProcedure,
+	adminServiceWipeBucketHandler := connect.NewUnaryHandler(
+		AdminServiceWipeBucketProcedure,
 		svc.WipeBucket,
-		connect.WithSchema(adminMethods.ByName("WipeBucket")),
+		connect.WithSchema(adminServiceMethods.ByName("WipeBucket")),
 		connect.WithHandlerOptions(opts...),
 	)
-	adminInvalidateHandler := connect.NewUnaryHandler(
-		AdminInvalidateProcedure,
+	adminServiceInvalidateHandler := connect.NewUnaryHandler(
+		AdminServiceInvalidateProcedure,
 		svc.Invalidate,
-		connect.WithSchema(adminMethods.ByName("Invalidate")),
+		connect.WithSchema(adminServiceMethods.ByName("Invalidate")),
 		connect.WithHandlerOptions(opts...),
 	)
-	return "/admin.v1.Admin/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return "/admin.v1.AdminService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case AdminStatsProcedure:
-			adminStatsHandler.ServeHTTP(w, r)
-		case AdminListProcedure:
-			adminListHandler.ServeHTTP(w, r)
-		case AdminWipeDiskProcedure:
-			adminWipeDiskHandler.ServeHTTP(w, r)
-		case AdminWipeBucketProcedure:
-			adminWipeBucketHandler.ServeHTTP(w, r)
-		case AdminInvalidateProcedure:
-			adminInvalidateHandler.ServeHTTP(w, r)
+		case AdminServiceStatsProcedure:
+			adminServiceStatsHandler.ServeHTTP(w, r)
+		case AdminServiceListProcedure:
+			adminServiceListHandler.ServeHTTP(w, r)
+		case AdminServiceWipeDiskProcedure:
+			adminServiceWipeDiskHandler.ServeHTTP(w, r)
+		case AdminServiceWipeBucketProcedure:
+			adminServiceWipeBucketHandler.ServeHTTP(w, r)
+		case AdminServiceInvalidateProcedure:
+			adminServiceInvalidateHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
 	})
 }
 
-// UnimplementedAdminHandler returns CodeUnimplemented from all methods.
-type UnimplementedAdminHandler struct{}
+// UnimplementedAdminServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedAdminServiceHandler struct{}
 
-func (UnimplementedAdminHandler) Stats(context.Context, *connect.Request[v1.StatsRequest]) (*connect.Response[v1.StatsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.Admin.Stats is not implemented"))
+func (UnimplementedAdminServiceHandler) Stats(context.Context, *connect.Request[v1.StatsRequest]) (*connect.Response[v1.StatsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.AdminService.Stats is not implemented"))
 }
 
-func (UnimplementedAdminHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.Admin.List is not implemented"))
+func (UnimplementedAdminServiceHandler) List(context.Context, *connect.Request[v1.ListRequest]) (*connect.Response[v1.ListResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.AdminService.List is not implemented"))
 }
 
-func (UnimplementedAdminHandler) WipeDisk(context.Context, *connect.Request[v1.WipeDiskRequest]) (*connect.Response[v1.WipeDiskResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.Admin.WipeDisk is not implemented"))
+func (UnimplementedAdminServiceHandler) WipeDisk(context.Context, *connect.Request[v1.WipeDiskRequest]) (*connect.Response[v1.WipeDiskResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.AdminService.WipeDisk is not implemented"))
 }
 
-func (UnimplementedAdminHandler) WipeBucket(context.Context, *connect.Request[v1.WipeBucketRequest]) (*connect.Response[v1.WipeBucketResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.Admin.WipeBucket is not implemented"))
+func (UnimplementedAdminServiceHandler) WipeBucket(context.Context, *connect.Request[v1.WipeBucketRequest]) (*connect.Response[v1.WipeBucketResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.AdminService.WipeBucket is not implemented"))
 }
 
-func (UnimplementedAdminHandler) Invalidate(context.Context, *connect.Request[v1.InvalidateRequest]) (*connect.Response[v1.InvalidateResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.Admin.Invalidate is not implemented"))
+func (UnimplementedAdminServiceHandler) Invalidate(context.Context, *connect.Request[v1.InvalidateRequest]) (*connect.Response[v1.InvalidateResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("admin.v1.AdminService.Invalidate is not implemented"))
 }

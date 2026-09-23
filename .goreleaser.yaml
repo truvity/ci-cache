@@ -1,0 +1,89 @@
+# Releases: the server as archives, so that a laptop or a runner can hold the
+# same binary the cluster does -- the tiers are one program, and a developer's
+# cache is this binary over a bucket -- and one image, built by ko without a
+# container runtime.
+version: 2
+project_name: ci-cache
+
+builds:
+  - id: ci-cache
+    main: ./cmd/ci-cache
+    binary: ci-cache
+    # Off everywhere but `just race`. It is what makes the binary static and
+    # the image small, and it is the only setting the Justfile, devbox.json
+    # and this file all have to agree about.
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # `ci-cache version` is what a bug report quotes, and a cache reports its
+    # own version in its Stats. Stamped, not read from a file: a binary copied
+    # out of a release has no file to read.
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+# One archive shape for every platform. Mixed formats are what breaks the
+# download step of whatever installs these -- and the shared release workflow
+# turns this archive into the Nix flake asset (`nix-flakes: ["ci-cache"]`),
+# which is how another repository's devbox pins this binary by hash. The id
+# below is the name it is asked for by.
+archives:
+  - id: ci-cache
+    ids: [ci-cache]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+kos:
+  - id: ci-cache
+    build: ci-cache
+    # Named here as well as in KO_DOCKER_REPO, and the SAME value in both, so
+    # that `goreleaser check` validates in a checkout with no environment --
+    # the lint recipe runs it without one.
+    #
+    # A per-ko `repositories:` list does NOT override KO_DOCKER_REPO. The
+    # shared release workflow exports that variable (`ko-docker-repo:
+    # ghcr.io/truvity/ci-cache`), and whatever is written here is silently
+    # ignored at release time: audit's v0.1.0 set a list, ko pushed to the
+    # env's value anyway, and the registry answered a 400 that named neither.
+    # So this list exists to make the check pass offline, and it has to be
+    # kept equal to what release.yaml sets -- it is not the way to change the
+    # destination.
+    repositories: [ghcr.io/truvity/ci-cache]
+    bare: true
+    preserve_import_paths: false
+    # ko names the image by appending the command's import-path base to the
+    # repository, so ./cmd/ci-cache publishes ghcr.io/truvity/ci-cache/ci-cache
+    # -- which is what charts/ci-cache/values.yaml has as `image.repository`.
+    # Without this the bare repository would be the image name, and the chart
+    # would point at a tag that was never pushed.
+    base_import_paths: true
+    base_image: cgr.dev/chainguard/static:latest
+    platforms: [linux/amd64, linux/arm64]
+    tags: ["{{ .Version }}", latest]
+    sbom: spdx
+
+# Named rather than inferred from the remote, so the config validates in a
+# checkout that has none.
+release:
+  github:
+    owner: truvity
+    name: ci-cache
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# From the history. CHANGELOG.md says what changed and why; this says what
+# landed between two tags, which is the question a bisect asks.
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"

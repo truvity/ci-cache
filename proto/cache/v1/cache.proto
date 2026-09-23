@@ -83,7 +83,7 @@ message PutResponse {
 //   AlreadyExists      an immutable key is already present
 //   ResourceExhausted  the server cannot make room for the object
 //   Unavailable        the server is over its concurrency limit
-service Cache {
+service CacheService {
   rpc Stat(StatRequest) returns (StatResponse);
   rpc Get(GetRequest) returns (stream GetResponse);
   rpc Put(stream PutRequest) returns (PutResponse);
