@@ -262,3 +262,47 @@ func TestDeleteReachesEveryTier(t *testing.T) {
 		}
 	}
 }
+
+// A tier that fails must not turn "not here" into "broken".
+//
+// This is the regression test for a real fault: an agent probes the server
+// with a Stat, the server answers through the chain, and while a failing
+// bucket made Stat return its error, one bucket outage made every agent on
+// the estate fall back to local-only although the server's disk was warm.
+func TestStatReportsAMissEvenWhenATierFails(t *testing.T) {
+	t.Parallel()
+
+	front, back := mem("front"), mem("back")
+	back.BeforePut = func(context.Context, string) error { return nil }
+	put(t, front, "present", "body", tier.Meta{})
+
+	// The tier behind refuses every read, the way a bucket answering 403
+	// does. Stat consults it and must not pass that on.
+	var seen []string
+	failing := &statFails{Memory: back}
+	c := chain.New([]tier.Tier{front, failing},
+		chain.OnTierError(func(ti tier.Tier, op string, _ error) {
+			seen = append(seen, ti.Name()+"/"+op)
+		}))
+
+	// The object the front tier holds is still found.
+	if _, err := c.Stat(context.Background(), "present"); err != nil {
+		t.Errorf("Stat of a present key = %v, want it found", err)
+	}
+
+	// And an absent one is a miss, not the failing tier's error.
+	if _, err := c.Stat(context.Background(), "absent"); !errors.Is(err, tier.ErrNotFound) {
+		t.Errorf("Stat of an absent key = %v, want ErrNotFound", err)
+	}
+	if len(seen) == 0 {
+		t.Error("the failing tier was swallowed silently: nothing reached OnTierError")
+	}
+}
+
+// statFails is a tier whose Stat always fails, which no in-memory tier does
+// on its own and which is the only thing this test is about.
+type statFails struct{ *tiertest.Memory }
+
+func (s *statFails) Stat(context.Context, string) (tier.Meta, error) {
+	return tier.Meta{}, errors.New("bucket says 403")
+}

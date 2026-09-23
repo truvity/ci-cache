@@ -223,12 +223,24 @@ func (a *Agent) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	return srv.Run(ctx, in, out)
 }
 
-// Close stops the agent's background work. It is safe to call twice, because
-// Run calls it and a caller that built the agent itself will too.
+// Close stops the agent's background work and writes the local tier's index.
+//
+// The index is why this is not optional. An agent is started and stopped once
+// per `go build`, and without a written index the next one walks the whole
+// cache directory to rediscover what is in it -- which on a warm runner is
+// the largest thing the agent does.
+//
+// It is safe to call twice, because Run calls it and a caller that built the
+// agent itself will too.
 func (a *Agent) Close() {
 	a.closeOnce.Do(func() {
 		if a.gcr != nil {
 			a.gcr.Stop()
+		}
+		if a.d != nil {
+			if err := a.d.Close(); err != nil {
+				a.warnf("local cache index not persisted (%v): the next build will rebuild it", err)
+			}
 		}
 	})
 }

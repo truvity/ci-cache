@@ -39,7 +39,7 @@ func agentCommand() *cli.Command {
 			"stdout: logs and the metrics summary go to stderr.",
 		Flags: append(agentFlags(), &cli.StringFlag{
 			Name:    "remote",
-			Usage:   "cache server base URL, including the front-end path [$" + envAgentRemote + "]",
+			Usage:   "cache server base URL, including the front-end path",
 			Sources: cli.EnvVars(envAgentRemote),
 		}),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -69,28 +69,28 @@ func agentFlags() []cli.Flag {
 	return append(configFlags("store"),
 		&cli.StringFlag{
 			Name:    "cache-dir",
-			Usage:   "local cache directory [$" + envAgentDir + "]",
+			Usage:   "local cache directory",
 			Sources: cli.EnvVars(envAgentDir),
 		},
 		&cli.Int64Flag{
 			Name:    "local-budget",
-			Usage:   "bytes the local cache may use; 0 derives one from the filesystem [$" + envAgentBudget + "]",
+			Usage:   "bytes the local cache may use; 0 derives one from the filesystem",
 			Sources: cli.EnvVars(envAgentBudget),
 		},
 		&cli.StringFlag{
 			Name:    "label",
-			Usage:   "name this agent in the metrics summary [$" + envAgentLabel + "]",
+			Usage:   "name this agent in the metrics summary",
 			Sources: cli.EnvVars(envAgentLabel),
 		},
 		&cli.BoolFlag{
 			Name:    "metrics",
-			Usage:   "print a one-line summary to stderr at exit [$" + envAgentMetrics + "]",
+			Usage:   "print a one-line summary to stderr at exit",
 			Sources: cli.EnvVars(envAgentMetrics, envLegacyMetrics),
 		},
 		&cli.StringFlag{
 			Name:    "log-level",
 			Value:   "warn",
-			Usage:   "debug, info, warn or error; the agent logs to stderr [$" + envPrefix + "AGENT_LOG_LEVEL]",
+			Usage:   "debug, info, warn or error; the agent logs to stderr",
 			Sources: cli.EnvVars(envPrefix + "AGENT_LOG_LEVEL"),
 		},
 	)

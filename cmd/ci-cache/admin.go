@@ -37,7 +37,7 @@ func adminCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "addr",
 				Value:   defaultAdminAddr,
-				Usage:   "admin API base URL [$" + envAdminAddr + "]",
+				Usage:   "admin API base URL",
 				Sources: cli.EnvVars(envAdminAddr),
 			},
 		},

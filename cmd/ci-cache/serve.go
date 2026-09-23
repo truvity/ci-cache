@@ -12,6 +12,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/truvity/ci-cache/admin"
 	"github.com/truvity/ci-cache/config"
 	"github.com/truvity/ci-cache/engine/bucket"
 	"github.com/truvity/ci-cache/engine/chain"
@@ -20,6 +21,7 @@ import (
 	"github.com/truvity/ci-cache/engine/tier"
 	"github.com/truvity/ci-cache/frontend/gomod"
 	"github.com/truvity/ci-cache/server"
+	"github.com/truvity/ci-cache/telemetry"
 )
 
 // bucketProbeTimeout bounds the one request that proves the object store is
@@ -53,6 +55,20 @@ func runServe(ctx context.Context, cmd *cli.Command) error {
 	if err := checkWritable(cfg.Persistence.Dir); err != nil {
 		return cli.Exit(fmt.Sprintf("ci-cache: refusing to start: %v", err), 1)
 	}
+
+	// Telemetry first, because everything after it is instrumented. An empty
+	// otlpEndpoint exports nothing and still counts everything.
+	tel, err := telemetry.New(ctx, cfg.Telemetry, version)
+	if err != nil {
+		return cli.Exit(fmt.Sprintf("ci-cache: refusing to start: telemetry: %v", err), 1)
+	}
+	defer func() {
+		sctx, scancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer scancel()
+		if err := tel.Shutdown(sctx); err != nil {
+			log.Warn("telemetry did not flush", "err", err)
+		}
+	}()
 
 	d, err := disk.New(cfg.Persistence.Dir)
 	if err != nil {
@@ -121,9 +137,62 @@ func runServe(ctx context.Context, cmd *cli.Command) error {
 		return cli.Exit(fmt.Sprintf("ci-cache: refusing to start: %v", err), 1)
 	}
 
+	// The gauges are registered whether or not anything exports them: the
+	// admin API reads the same numbers, so a cache installed before the
+	// observability stack exists can still be asked what it is holding.
+	tel.SetGauges(telemetry.Gauges{
+		DiskUsedBytes:   d.Used,
+		DiskBudgetBytes: collector.Budget,
+		DiskEntries:     d.Entries,
+		DiskBytesByFrontend: func() map[string]int64 {
+			out := make(map[string]int64, len(frontends))
+			for _, f := range frontends {
+				_, bytes := d.UsedBy(f.Name())
+				out[f.Name()] = bytes
+			}
+			return out
+		},
+		DiskEntriesByFrontend: func() map[string]int64 {
+			out := make(map[string]int64, len(frontends))
+			for _, f := range frontends {
+				entries, _ := d.UsedBy(f.Name())
+				out[f.Name()] = entries
+			}
+			return out
+		},
+		UploadQueueDepth: func() int64 {
+			if queue == nil {
+				return 0
+			}
+			return int64(queue.Depth())
+		},
+	})
+
+	// The ADMIN LISTENER, on a port of its own.
+	//
+	// On the data port every CI job is a client, and a job that can wipe can
+	// empty or poison the cache for everyone; the port is the boundary, and
+	// the chart's NetworkPolicy never admits it. Its failure is logged and
+	// never fatal: losing the ability to read statistics is not a reason to
+	// stop serving a cache.
+	adminSrv := admin.New(admin.Deps{
+		Version:   version,
+		StartedAt: time.Now(),
+		Disk:      diskInfo{d: d, gc: collector, frontends: frontendNames(frontends)},
+		Bucket:    adminBucket(b),
+		Stats:     tel.Recorder(),
+		Queue:     adminQueue(queue),
+	}, admin.WithLogger(log))
+
+	adminErr := make(chan error, 1)
+	go func() {
+		adminErr <- adminSrv.ListenAndServe(ctx, fmt.Sprintf(":%d", cfg.Service.Admin))
+	}()
+
 	log.Info("starting",
 		"version", version,
 		"data_port", cfg.Service.Data,
+		"admin_port", cfg.Service.Admin,
 		"dir", cfg.Persistence.Dir,
 		"bucket", cfg.Store.Bucket,
 		"frontends", frontendNames(frontends),
@@ -139,6 +208,13 @@ func runServe(ctx context.Context, cmd *cli.Command) error {
 	select {
 	case err := <-serveErr:
 		return err
+	case err := <-adminErr:
+		// The admin listener going down on its own is worth saying loudly
+		// and is not worth stopping for; the cache is still a cache.
+		if err != nil {
+			log.Error("the admin listener stopped", "err", err)
+		}
+		<-sigs
 	case <-ctx.Done():
 	case s := <-sigs:
 		log.Info("draining", "signal", s.String(), "timeout", cfg.Server.DrainTimeout.String())
@@ -161,6 +237,9 @@ func runServe(ctx context.Context, cmd *cli.Command) error {
 
 	if err := srv.Shutdown(dctx); err != nil {
 		log.Warn("listeners did not close cleanly", "err", err)
+	}
+	if err := adminSrv.Shutdown(dctx); err != nil {
+		log.Warn("the admin listener did not close cleanly", "err", err)
 	}
 	if queue != nil {
 		drainQueue(dctx, log, queue)

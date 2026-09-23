@@ -45,6 +45,12 @@ type Chain struct {
 	// of writing them inline. The bucket uses it: a runner should not wait
 	// on an upload to have its object cached locally.
 	writeBehind func(t tier.Tier, key string, m tier.Meta, body []byte) bool
+
+	// onTierError, when set, is told about a tier that failed while the
+	// chain carried on without it. The chain swallows such errors by design
+	// -- see Stat -- and this is how they still reach a log and a counter
+	// instead of vanishing.
+	onTierError func(t tier.Tier, op string, err error)
 }
 
 // Option configures a Chain.
@@ -62,6 +68,13 @@ func OnFault(f func(key string, from tier.Tier)) Option {
 // later and never an error now.
 func WriteBehind(f func(t tier.Tier, key string, m tier.Meta, body []byte) bool) Option {
 	return func(c *Chain) { c.writeBehind = f }
+}
+
+// OnTierError registers a callback for a tier that failed while the chain
+// answered from another one. Without it those failures are invisible, which
+// is how a bucket stays broken for a week behind a warm disk.
+func OnTierError(f func(t tier.Tier, op string, err error)) Option {
+	return func(c *Chain) { c.onTierError = f }
 }
 
 // New returns a chain over the tiers, read in the order given.
@@ -90,11 +103,11 @@ func (c *Chain) Get(ctx context.Context, key string) (io.ReadCloser, tier.Meta, 
 		if err == nil {
 			return rc, m, nil
 		}
-		if !errors.Is(err, tier.ErrNotFound) {
+		if !errors.Is(err, tier.ErrNotFound) && c.onTierError != nil {
 			// A broken front tier is not a reason to stop: the object may
 			// still be behind it, and a cache that fails closed on a bad
-			// disk is worse than one that is slow.
-			_ = err
+			// disk is worse than one that is slow. It is a reason to say so.
+			c.onTierError(c.tiers[0], "get", err)
 		}
 	}
 
@@ -277,20 +290,31 @@ func (c *Chain) Put(ctx context.Context, key string, r io.Reader, m tier.Meta) e
 	return nil
 }
 
-// Stat answers from the frontmost tier that has the object.
+// Stat answers from the frontmost tier that has the object, and reports a
+// miss when none of them does -- EVEN IF A TIER FAILED while being asked.
+//
+// That is deliberate, and it was a real fault before it was a rule. A runner's
+// agent probes the server with a Stat before it trusts it; the server answers
+// through this chain; and while Stat returned the bucket's error, a bucket
+// answering 403 made every agent on the estate conclude the server was
+// unreachable and fall back to local-only -- although the server's warm disk
+// would have served them all. One back-end's outage became everybody's cache
+// outage, which is precisely the failure the tiers exist to prevent.
+//
+// "Is this key here" has a usable answer even when part of the chain cannot
+// be asked: not as far as I can tell. A tier's health is reported by the
+// readiness probe and by cicache.get{outcome=error}, which is where an
+// operator looks for it -- not smuggled into the answer to a different
+// question.
 func (c *Chain) Stat(ctx context.Context, key string) (tier.Meta, error) {
-	var firstErr error
 	for _, t := range c.tiers {
 		m, err := t.Stat(ctx, key)
 		if err == nil {
 			return m, nil
 		}
-		if !errors.Is(err, tier.ErrNotFound) && firstErr == nil {
-			firstErr = err
+		if !errors.Is(err, tier.ErrNotFound) && c.onTierError != nil {
+			c.onTierError(t, "stat", err)
 		}
-	}
-	if firstErr != nil {
-		return tier.Meta{}, firstErr
 	}
 	return tier.Meta{}, tier.ErrNotFound
 }
