@@ -61,6 +61,36 @@ The one thing that does still fail is the agent not starting at all, because
 then `go` has no program to talk to. Keep the binary in the image rather than
 fetching it in the job.
 
+### What a write waits for
+
+The toolchain calls `put` once per compiled object and waits for the answer
+before it goes on, so whatever `put` does is on the critical path of the
+build. A `go build` writes thousands of objects, and anything paid per object
+is paid thousands of times in series.
+
+So a write is split:
+
+| tier | when | why |
+|---|---|---|
+| the local disk | before the answer | the build asks for things it has just produced, and a deferred local write turns those into misses and recompiles |
+| the server, the object store | after the answer | this is the round trip, and nothing in this build is waiting on it |
+
+The deferred recordings run on a bounded pool — `--upload-workers`, which
+also reads `CI_CACHE_AGENT_UPLOAD_WORKERS`. Bounded rather than unbounded
+because a build that outruns the network would otherwise accumulate one
+in-flight request per object and fail on file descriptors somewhere
+unhelpful.
+
+The time is paid back at the end. When `go` closes the stream, the agent
+waits for the outstanding recordings and says how long it waited. That wait
+is bounded too: a job that appears to finish and then sits there is a job
+somebody cancels. If it runs out, the objects are still on local disk and the
+summary reports `lost=N` — the count of objects that were **not** recorded
+for the next build.
+
+`lost` is the number to check first when a build time improves, because the
+cheapest way to make this agent look fast is to stop recording anything.
+
 ### Direct mode, for a laptop
 
 Direct mode is what the agent does with **no remote**: the object store goes

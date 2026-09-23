@@ -58,12 +58,12 @@ func TestBudgetComesFromTheMemoryLimit(t *testing.T) {
 // cgroup reports unlimited as a very large number, not as a word.
 func TestNoLimitIsNotABudget(t *testing.T) {
 	for name, contents := range map[string]string{
-		"v2 unlimited":      "max\n",
-		"v1 unlimited":      "9223372036854771712\n",
-		"empty file":        "",
-		"not a number":      "banana\n",
-		"zero":              "0\n",
-		"negative":          "-1\n",
+		"v2 unlimited": "max\n",
+		"v1 unlimited": "9223372036854771712\n",
+		"empty file":   "",
+		"not a number": "banana\n",
+		"zero":         "0\n",
+		"negative":     "-1\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			writeLimit(t, contents)

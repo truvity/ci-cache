@@ -37,6 +37,16 @@ type Stats struct {
 	// and not an error.
 	Drops int64
 
+	// LostRecords are objects that reached local disk but never reached the
+	// chain: a drain that ran out of time, or a file that could not be
+	// reopened. Distinct from Drops, which the chain saw and refused.
+	//
+	// It is on the summary line because recording moved off the critical
+	// path, and the failure mode that introduces is a build that looks
+	// faster because it recorded less. A number that is not zero is the
+	// first thing to check when a time improves.
+	LostRecords int64
+
 	BytesRead    int64
 	BytesWritten int64
 
@@ -50,13 +60,14 @@ type Stats struct {
 // with nothing left racing it.
 func (a *Agent) Stats() Stats {
 	s := Stats{
-		Label:    a.opts.Label,
-		Degraded: a.degraded,
-		Elapsed:  time.Since(a.started),
-		Gets:     a.gets.Load(),
-		Hits:     a.hits.Load(),
-		Drops:    a.drops.Load(),
-		Tiers:    make([]TierStats, 0, len(a.meters)),
+		Label:       a.opts.Label,
+		Degraded:    a.degraded,
+		Elapsed:     time.Since(a.started),
+		Gets:        a.gets.Load(),
+		Hits:        a.hits.Load(),
+		Drops:       a.drops.Load(),
+		LostRecords: a.lostRecords.Load(),
+		Tiers:       make([]TierStats, 0, len(a.meters)),
 	}
 	s.Misses = s.Gets - s.Hits
 	for _, m := range a.meters {
@@ -95,9 +106,9 @@ func (s Stats) Line() string {
 	for _, t := range s.Tiers {
 		errs += t.Errors + t.PutErrors
 	}
-	fmt.Fprintf(&b, " read=%s wrote=%s drops=%d errors=%d degraded=%t elapsed=%s",
+	fmt.Fprintf(&b, " read=%s wrote=%s drops=%d lost=%d errors=%d degraded=%t elapsed=%s",
 		humanBytes(s.BytesRead), humanBytes(s.BytesWritten),
-		s.Drops, errs, s.Degraded, s.Elapsed.Round(time.Millisecond))
+		s.Drops, s.LostRecords, errs, s.Degraded, s.Elapsed.Round(time.Millisecond))
 	return b.String()
 }
 
