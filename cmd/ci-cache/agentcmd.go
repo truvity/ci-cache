@@ -77,6 +77,11 @@ func agentFlags() []cli.Flag {
 			Usage:   "bytes the local cache may use; 0 derives one from the filesystem",
 			Sources: cli.EnvVars(envAgentBudget),
 		},
+		&cli.IntFlag{
+			Name:    "upload-workers",
+			Sources: cli.EnvVars("CI_CACHE_AGENT_UPLOAD_WORKERS"),
+			Usage:   "how many objects may be recorded into the chain at once, behind the build; 0 picks a default",
+		},
 		&cli.StringFlag{
 			Name:    "label",
 			Usage:   "name this agent in the metrics summary",
@@ -107,12 +112,13 @@ func runAgent(ctx context.Context, cmd *cli.Command, remote string, direct bool)
 	log := newLogger(os.Stderr, cmd.String("log-level"))
 
 	opts := agent.Options{
-		Remote:      remote,
-		CacheDir:    cmd.String("cache-dir"),
-		LocalBudget: cmd.Int64("local-budget"),
-		Metrics:     cmd.Bool("metrics"),
-		Label:       cmd.String("label"),
-		Logf:        agentLogf(log),
+		Remote:        remote,
+		CacheDir:      cmd.String("cache-dir"),
+		LocalBudget:   cmd.Int64("local-budget"),
+		UploadWorkers: cmd.Int("upload-workers"),
+		Metrics:       cmd.Bool("metrics"),
+		Label:         cmd.String("label"),
+		Logf:          agentLogf(log),
 	}
 	if cfg.Store.Bucket != "" {
 		store := cfg.Store

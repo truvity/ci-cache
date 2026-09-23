@@ -75,6 +75,12 @@ type Options struct {
 	// laptop it is the whole chain.
 	Bucket *config.Store
 
+	// UploadWorkers bounds how many objects are being recorded into the
+	// chain at once, behind the toolchain. Zero picks a default; see
+	// uploads.go for why that default has a floor rather than tracking the
+	// CPU count.
+	UploadWorkers int
+
 	// Metrics prints a one-line summary to stderr at exit. The habit comes
 	// from GOCACHE_METRICS, and it is worth keeping: a job log that does not
 	// say what the cache did is a job nobody can tell was slow because of it.
@@ -106,6 +112,16 @@ type Agent struct {
 	meters []*meter
 	cache  *gobuild.Cache
 
+	// localCache writes only the local tier and is on the critical path.
+	// behindCache writes everything further back and is not; it is nil when
+	// nothing is configured behind the local tier.
+	localCache  *gobuild.Cache
+	behindCache *gobuild.Cache
+
+	// uploads carries finished objects into the chain after the toolchain
+	// has already been answered. See uploads.go.
+	uploads *uploads
+
 	degraded bool
 	started  time.Time
 
@@ -114,6 +130,11 @@ type Agent struct {
 	// reading its record and then its output, so a single hit shows up as
 	// two reads of whichever tier held them.
 	gets, hits, drops atomic.Int64
+
+	// lostRecords counts objects that reached local disk but were never
+	// recorded in the chain -- a drain that timed out, or a file that could
+	// not be reopened. Separate from drops, which the chain refused.
+	lostRecords atomic.Int64
 
 	closeOnce sync.Once
 }
@@ -133,7 +154,13 @@ func New(ctx context.Context, opts Options) (*Agent, error) {
 		return nil, err
 	}
 
-	a := &Agent{opts: opts, logf: opts.Logf, dir: dir, started: started}
+	a := &Agent{
+		opts:    opts,
+		logf:    opts.Logf,
+		dir:     dir,
+		started: started,
+		uploads: newUploads(opts.UploadWorkers),
+	}
 
 	// The materialised objects and the disk tier live in sibling directories
 	// under the cache dir. Keeping them apart means neither has to know the
@@ -146,7 +173,12 @@ func New(ctx context.Context, opts Options) (*Agent, error) {
 		return nil, fmt.Errorf("agent: local cache in %s: %w", dir, err)
 	}
 
-	tiers := []tier.Tier{a.meterFor(a.d)}
+	localTiers := []tier.Tier{a.meterFor(a.d)}
+
+	// Tiers behind the local one are recorded into after the toolchain has
+	// been answered, so they are assembled separately. See put.
+	var behind []tier.Tier
+
 	if opts.Remote != "" {
 		r, err := a.dial(ctx, opts.Remote, deadline)
 		if err != nil {
@@ -156,7 +188,7 @@ func New(ctx context.Context, opts Options) (*Agent, error) {
 			a.degraded = true
 			a.warnf("remote cache %s is unreachable (%v): serving from the local cache only", opts.Remote, err)
 		} else {
-			tiers = append(tiers, a.meterFor(breaker.New(r)))
+			behind = append(behind, a.meterFor(breaker.New(r)))
 		}
 	}
 	if opts.Bucket != nil {
@@ -167,12 +199,23 @@ func New(ctx context.Context, opts Options) (*Agent, error) {
 			a.degraded = true
 			a.warnf("object store %s is unavailable (%v): it will not be used", opts.Bucket.Bucket, err)
 		} else {
-			tiers = append(tiers, a.meterFor(breaker.New(b)))
+			behind = append(behind, a.meterFor(breaker.New(b)))
 		}
 	}
 
-	a.chain = chain.New(tiers)
+	// Reads go through the whole chain, nearest first, exactly as before.
+	a.chain = chain.New(append(append([]tier.Tier{}, localTiers...), behind...))
 	a.cache = gobuild.New(a.chain, config.GoBuild{Enabled: true})
+
+	// Writes are split. The local tier is written before the toolchain is
+	// answered, because a build asks for things it has just produced and a
+	// deferred local write turns those into misses and recompiles. What sits
+	// behind it -- the server, the bucket -- is recorded afterwards, which is
+	// where the time actually goes.
+	a.localCache = gobuild.New(chain.New(localTiers), config.GoBuild{Enabled: true})
+	if len(behind) > 0 {
+		a.behindCache = gobuild.New(chain.New(behind), config.GoBuild{Enabled: true})
+	}
 
 	// The agent has no admin port and nobody to ask, so its disk tier is
 	// kept inside its budget by the same collector the server uses.
@@ -247,6 +290,12 @@ func (a *Agent) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 // agent itself will too.
 func (a *Agent) Close() {
 	a.closeOnce.Do(func() {
+		// Before the tier is closed under them: a recording still in flight
+		// is writing to the very disk index Close is about to persist.
+		// Serve's normal path has already drained via protocolClose, so this
+		// is the backstop for the paths that did not get there.
+		a.drainUploads()
+
 		if a.gcr != nil {
 			a.gcr.Stop()
 		}
@@ -310,7 +359,8 @@ func (a *Agent) get(ctx context.Context, actionID string) (outputID, diskPath st
 //
 // The object is landed locally FIRST, because that is what the response has
 // to name and what the next build will read. Recording it in the chain comes
-// after and is allowed to fail.
+// after, does not block the answer, and is allowed to fail: see uploads.go
+// for why that ordering is the whole point of this path.
 func (a *Agent) put(ctx context.Context, obj gocache.Object) (string, error) {
 	modTime := obj.ModTime
 	if modTime.IsZero() {
@@ -321,27 +371,119 @@ func (a *Agent) put(ctx context.Context, obj gocache.Object) (string, error) {
 		return "", err
 	}
 
+	actionID, outputID := obj.ActionID, obj.OutputID
+
+	// The local tier first, and synchronously. This is what answers a get
+	// for the same action later in the same build, and deferring it makes
+	// those gets miss -- which costs a recompile and hides as "the cache is
+	// not working" rather than as a bug here.
+	a.record(ctx, a.localCache, actionID, outputID, size, modTime, path)
+
+	if a.behindCache == nil {
+		return path, nil
+	}
+
+	// Opened here, on the toolchain's goroutine, and the open descriptor is
+	// what the recording carries. Two reasons, and neither is style: it
+	// closes the window in which the object directory's pruner could remove
+	// the file between submitting the work and opening it, and it ties the
+	// descriptor count to the worker limit rather than to how far the build
+	// has run ahead of the network.
 	f, err := os.Open(path)
 	if err != nil {
-		return "", fmt.Errorf("agent: reread object %s: %w", obj.OutputID, err)
+		// Not an error the build should see. The compiler has the path and
+		// is about to read it; all that is lost is the record, which costs
+		// somebody a slower build later and nothing now.
+		a.lostRecords.Add(1)
+		a.logf("reread object %s: %v (not recorded)", outputID, err)
+
+		return path, nil
+	}
+
+	a.uploads.submit(func() {
+		defer f.Close()
+
+		// Detached from ctx, which is cancelled the moment this put is
+		// answered -- which is now. Bounded, so an unresponsive server
+		// cannot hold a worker for the rest of the build.
+		uctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), uploadTimeout)
+		defer cancel()
+
+		if err := a.behindCache.Put(uctx, actionID, outputID, size, modTime, f); err != nil {
+			if !errors.Is(err, tier.ErrExists) {
+				a.drops.Add(1)
+				a.logf("put %s: %v (dropped)", actionID, err)
+			}
+		}
+	})
+
+	return path, nil
+}
+
+// record writes one object into a cache, reading it back from disk.
+//
+// Errors are counted and logged, never returned: the object the compiler was
+// handed is already on disk, and failing the build because a cache tier
+// would not take a copy would trade a slow build for no build at all.
+func (a *Agent) record(
+	ctx context.Context, c *gobuild.Cache,
+	actionID, outputID string, size int64, modTime time.Time, path string,
+) {
+	f, err := os.Open(path)
+	if err != nil {
+		a.lostRecords.Add(1)
+		a.logf("reread object %s: %v (not recorded)", outputID, err)
+
+		return
 	}
 	defer f.Close()
 
-	if err := a.cache.Put(ctx, obj.ActionID, obj.OutputID, size, modTime, f); err != nil {
+	if err := c.Put(ctx, actionID, outputID, size, modTime, f); err != nil {
 		if !errors.Is(err, tier.ErrExists) {
 			a.drops.Add(1)
-			a.logf("put %s: %v (dropped)", obj.ActionID, err)
+			a.logf("put %s: %v (dropped)", actionID, err)
 		}
 	}
-	return path, nil
 }
 
 // protocolClose is called once, when the toolchain closes the stream.
 //
-// It exists mostly so that the server advertises "close" and waits for us
-// instead of stopping the moment stdin ends; there is nothing here that has
-// to be flushed, because a put is only answered once its object is on disk.
-func (a *Agent) protocolClose(context.Context) error { return nil }
+// This is where the recordings that the build did not wait for are waited
+// for. The toolchain advertising "close" is what makes the whole scheme
+// honest: puts are answered early, and the one place that owes the time back
+// is here, at the end, with everything in flight at once rather than one at
+// a time.
+func (a *Agent) protocolClose(context.Context) error {
+	a.drainUploads()
+
+	return nil
+}
+
+// drainUploads waits for the outstanding recordings and says what happened.
+//
+// A drain that times out is reported and not returned as an error. Every
+// object is already on local disk and the build is correct either way; what
+// was lost is that some of them will not be there for the next build.
+func (a *Agent) drainUploads() {
+	if a.uploads == nil {
+		return
+	}
+
+	pending := a.uploads.pending.Load()
+	if pending > 0 {
+		a.logf("waiting for %d cache uploads", pending)
+	}
+
+	finished, waited, left := a.uploads.drain(uploadDrainTimeout)
+	switch {
+	case !finished:
+		a.lostRecords.Add(left)
+		a.warnf("gave up waiting for %d cache uploads after %s: those objects are on local disk but were not recorded",
+			left, waited.Round(time.Millisecond))
+	case pending > 0:
+		a.logf("uploads complete (%s)", waited.Round(time.Millisecond))
+	}
+}
 
 // dial constructs the remote tier and proves it is answering.
 //
