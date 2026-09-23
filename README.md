@@ -137,6 +137,7 @@ the two ports equal.
 | wire a build | [Go](docs/clients/go.md), [Maven](docs/clients/maven.md), [Gradle](docs/clients/gradle.md), [Nix](docs/clients/nix.md), [npm](docs/clients/npm.md), [Bazel](docs/clients/bazel.md) |
 | install it | [AWS S3](docs/deploy/aws-s3.md), [Cloudflare R2](docs/deploy/cloudflare-r2.md) |
 | run it | [operations](docs/operations.md) |
+| measure it | [benchmarking](docs/benchmarking.md) |
 | know why | [the decisions](docs/decisions/README.md) |
 
 Everything starts at [docs/](docs/README.md).
