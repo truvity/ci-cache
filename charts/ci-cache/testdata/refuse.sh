@@ -20,6 +20,21 @@ base=(--set store.bucket=ci-cache-example --set store.region=eu-west-1)
 fail=0
 checked=0
 
+# Not a refusal: the one thing the chart must ASSERT about the container it
+# renders. The refusals below all check that a bad input is rejected; none of
+# them would notice a render that succeeds and produces a pod which cannot
+# run, which is exactly what shipped in 0.1.0 -- no `args`, so the ko
+# entrypoint ran the bare CLI, printed its help, exited 0, and crash-looped.
+# Every golden was reviewed and every refusal passed.
+checked=$((checked + 1))
+if ! helm template t "$chart" "${base[@]}" 2>/dev/null \
+    | grep -A2 -E '^ +args:' | grep -qE '^ +- serve$'; then
+    echo "FAIL: the rendered container does not run \`serve\`"
+    echo "      ko's entrypoint is the bare binary; with no subcommand it prints help and exits"
+    fail=$((fail + 1))
+fi
+
+
 # The control. Every case below is a refusal, so a chart that refused
 # EVERYTHING -- a typo in a helper, say -- would pass all of them and prove
 # nothing. This is the render that must succeed.
