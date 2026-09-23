@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
-## [Unreleased]
+## [0.1.2] - 2026-09-23
 
 ### Fixed
 
