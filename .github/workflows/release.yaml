@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: write
       packages: write
-    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@98939fa99a6ac03994253fd00a7b336fac9fe0a9 # v3.2.0
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@36be6b238bfb119de3ffeed9604bae5e7a3d7c8d # v3.4.0
     with:
       charts: '["ci-cache"]'
       # The server as a Nix flake, one release asset, so that a runner image
