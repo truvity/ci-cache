@@ -41,17 +41,18 @@ mandatory, it is one protocol, and it has had no feature commit since June
 
 ## Quick start
 
-On Cloudflare R2 — the store with the most to get wrong, and therefore the
-example worth reading:
+The bucket is **any S3-compatible store**. AWS S3 and Cloudflare R2 are both
+first-class, each with its own page; the difference between them is four
+lines of values.
+
+On **AWS S3**, where the role is on the ServiceAccount and there is nothing
+to hold:
 
 ```yaml
 # values.yaml
 store:
   bucket: <bucket>
-  region: auto                                        # R2 refuses a location lookup
-  endpoint: https://<account>.r2.cloudflarestorage.com
-  pathStyle: true                                     # the wildcard cert stops at the account
-  existingSecret: ci-cache-r2                         # R2 has no pod identity
+  region: <region>                                    # required: no lookup, ever
 
 persistence:
   enabled: true
@@ -64,12 +65,37 @@ networkPolicy:
 ```
 
 ```
+helm upgrade --install ci-cache charts/ci-cache -n <namespace> -f values.yaml
+```
+
+EKS Pod Identity or IRSA carries the credential, so nothing above is a
+secret. Give the role `GetObject`, `PutObject`, `DeleteObject` and
+`ListBucket` on that bucket alone, put a lifecycle rule on it, and use a VPC
+gateway endpoint — without one every fault-in leaves through NAT and is
+billed per gigabyte, which is most of what this saves.
+[AWS S3](docs/deploy/aws-s3.md) has all four in full.
+
+On **Cloudflare R2**, the same install plus the three settings R2 needs *at
+once* — and it is all three or none, which is why it has its own page:
+
+```yaml
+store:
+  bucket: <bucket>
+  region: auto                                        # R2 refuses a location lookup
+  endpoint: https://<account>.r2.cloudflarestorage.com
+  pathStyle: true                                     # the wildcard cert stops at the account
+  existingSecret: ci-cache-r2                         # R2 has no pod identity
+```
+
+```
 kubectl create secret generic ci-cache-r2 \
   --from-literal=AWS_ACCESS_KEY_ID=<access-key-id> \
   --from-literal=AWS_SECRET_ACCESS_KEY=<secret-access-key>
-
-helm upgrade --install ci-cache charts/ci-cache -n <namespace> -f values.yaml
 ```
+
+Setting `endpoint` also turns off the SDK's default checksums, which every
+store but AWS rejects — [Cloudflare R2](docs/deploy/cloudflare-r2.md) has
+that trap in full.
 
 Then point a build at it:
 
@@ -79,9 +105,8 @@ GOCACHEPROG=ci-cache agent --remote http://ci-cache:8080/go/build
 ```
 
 The `|` matters: it falls through on *any* error, so an unreachable cache is a
-slower build and not a failed one. [AWS S3](docs/deploy/aws-s3.md) is the
-other store, and [clients/go](docs/clients/go.md) is the rest of the Go
-wiring, including what `ci-workflows` already sets.
+slower build and not a failed one. [clients/go](docs/clients/go.md) is the
+rest of the Go wiring, including what `ci-workflows` already sets.
 
 ## Two ports
 
