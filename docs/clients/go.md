@@ -61,6 +61,23 @@ The one thing that does still fail is the agent not starting at all, because
 then `go` has no program to talk to. Keep the binary in the image rather than
 fetching it in the job.
 
+### What a read fetches
+
+A lookup is two things: an action record of 84 bytes that names an output, and
+the output itself. The agent materialises every output into a directory the
+compiler opens by path, and within one build it is asked repeatedly for
+objects already sitting there.
+
+So the record is resolved first, and the body is fetched **only if the object
+is not already materialised**. Previously the body was fetched regardless and
+then discarded, because the record was the only way to learn the output's
+identity and there was no way to act on it without the bytes.
+
+The summary line reports `reused=N` for lookups answered that way. Usually
+what it saves is a full read from local disk; it saves a network fetch when
+the disk tier has been evicted under budget pressure while the materialised
+file survives — the constrained runner where it matters most.
+
 ### What a write waits for
 
 The toolchain calls `put` once per compiled object and waits for the answer

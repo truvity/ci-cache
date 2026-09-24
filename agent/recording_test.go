@@ -269,7 +269,6 @@ func TestAGetAfterAPutHitsWhileTheServerIsStillBusy(t *testing.T) {
 	back := tiertest.NewMemory()
 
 	release := make(chan struct{})
-	defer close(release)
 
 	back.BeforePut = func(ctx context.Context, _ string) error {
 		select {
@@ -290,7 +289,14 @@ func TestAGetAfterAPutHitsWhileTheServerIsStillBusy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New = %v", err)
 	}
-	defer a.Close()
+
+	// Close runs through Cleanup, not defer, and the ordering is the whole
+	// point: Close drains the recordings, and a deferred Close would run
+	// BEFORE the deferred close(release) that unblocks them -- so the drain
+	// would sit out the upload timeout and the test would take a minute to
+	// pass. Cleanup runs after the defers, so the server is released first.
+	defer close(release)
+	t.Cleanup(a.Close)
 
 	if a.Degraded() {
 		t.Fatal("agent came up degraded; the test would prove nothing")
@@ -318,5 +324,67 @@ func TestAGetAfterAPutHitsWhileTheServerIsStillBusy(t *testing.T) {
 
 	if n := back.Len(); n != 0 {
 		t.Errorf("the server stored %d entries while held still: the deferred write is not deferred", n)
+	}
+}
+
+// The conditional fetch, stated as a test.
+//
+// Within one build the toolchain asks repeatedly for objects it has already
+// been handed. The action record -- 84 bytes -- is all that is needed to
+// discover that, but Get offered no way to act on it. So the agent read the
+// whole object back out of a tier and handed it to objectDir.write, which,
+// finding the file already present, drained the reader into io.Discard. A
+// full read of a megabyte, to learn nothing.
+//
+// Usually that read is local disk. It is the network when the disk tier has
+// been evicted under budget pressure but the materialised file survives --
+// which is precisely the constrained runner where it hurts most.
+//
+// What is asserted here is Reused, because it is the only thing that
+// distinguishes the two paths from outside. An assertion that the SERVER was
+// not read would pass either way: the put wrote the record and the output
+// into the local tier, so a repeat get resolves locally with or without this
+// change.
+func TestARepeatGetIsServedWithoutFetchingTheBody(t *testing.T) {
+	back := tiertest.NewMemory()
+	url := startServer(t, back)
+
+	a, err := agent.New(context.Background(), agent.Options{
+		Remote:   url,
+		CacheDir: t.TempDir(),
+		Logf:     func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("New = %v", err)
+	}
+	t.Cleanup(a.Close)
+
+	if a.Degraded() {
+		t.Fatal("agent came up degraded; the test would prove nothing")
+	}
+
+	s := newSession(t, a)
+	action := []byte("\xa1\xa2\xa3\xa4")
+	output := []byte("\xb1\xb2\xb3\xb4")
+	body := []byte("fetched exactly once")
+
+	if put := s.send(progRequest{
+		ID: 1, Command: "put", ActionID: action, OutputID: output, BodySize: int64(len(body)),
+	}, body); put.Err != "" {
+		t.Fatalf("put = %q", put.Err)
+	}
+
+	hit := s.send(progRequest{ID: 2, Command: "get", ActionID: action}, nil)
+	if hit.Miss || hit.Err != "" {
+		t.Fatalf("repeat get = %+v, want a hit served from the materialised file", hit)
+	}
+
+	got, err := os.ReadFile(hit.DiskPath)
+	if err != nil || string(got) != string(body) {
+		t.Fatalf("object at %s = %q, %v; want %q", hit.DiskPath, got, err, body)
+	}
+
+	if st := a.Stats(); st.Reused == 0 {
+		t.Error("Stats().Reused is 0: the body was fetched after all, or the counter is not wired")
 	}
 }

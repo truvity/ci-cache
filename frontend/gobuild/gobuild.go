@@ -94,9 +94,41 @@ func (c *Cache) Name() string { return "go/build" }
 func (c *Cache) Get(ctx context.Context, actionID string) (
 	outputID string, body io.ReadCloser, m tier.Meta, ok bool, err error,
 ) {
+	return c.GetIf(ctx, actionID, nil)
+}
+
+// GetIf is Get, except that once the action record has resolved it asks
+// `need` whether the output bytes are actually wanted.
+//
+// It exists for one caller and one measured cost. The agent materialises
+// every object it serves into a directory the compiler opens by path, and
+// within a single build it is often asked again for something already
+// sitting there. Get gives it no way to find that out without the body, so
+// it was fetching the object -- over the network, in the remote case -- and
+// throwing it away, because the record is the only thing that maps an action
+// to an output id.
+//
+// A nil `need` means the body is always wanted, which is what Get is.
+//
+// When `need` declines, the returned Meta carries the record's modification
+// time but no size: nothing was read, so there is no size to report, and a
+// caller that declined the bytes is by construction one that already has
+// them and can measure them itself.
+func (c *Cache) GetIf(
+	ctx context.Context, actionID string,
+	need func(outputID string, modTime time.Time) bool,
+) (outputID string, body io.ReadCloser, m tier.Meta, ok bool, err error) {
 	rec, from, ok, err := c.action(ctx, actionID)
 	if err != nil || !ok {
 		return "", nil, tier.Meta{}, false, err
+	}
+
+	if need != nil && !need(rec.outputID, rec.modTime) {
+		// Deliberately NOT verified against the tier. The caller is saying it
+		// already holds these bytes; a Stat here to confirm the tier agrees
+		// would put back a round trip on exactly the path this exists to
+		// remove, and would answer a question the caller did not ask.
+		return rec.outputID, nil, c.meta(tier.Meta{}, rec), true, nil
 	}
 
 	rc, om, ok, err := c.output(ctx, rec.outputID, from)
