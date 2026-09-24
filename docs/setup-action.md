@@ -115,8 +115,11 @@ repository is a warning people learn to scroll past.
 
 The directory's size is therefore a **node's** problem, not a job's, and
 that is deliberate: trimming belongs to something that can see the whole
-directory and knows no build is reading it. Upstream growing touch-on-use
-and a concurrency-safe trim would change this; until then, see INF-961.
+directory and knows no build is reading it. What would change this is
+upstream growing a sweep that cannot delete an object written during its
+own mark phase — a generation marker, or a lock held across mark and
+sweep — together with touch-on-use, so an action still in daily service is
+not expired out from under the objects it names.
 
 ## Why every decision is printed
 

@@ -188,10 +188,11 @@ runs:
         # removed, and the compiler opens a file that is no longer there.
         # That is a build failure with no explanation in it.
         #
-        # Upstream should grow touch-on-use and a concurrency-safe trim.
-        # Until then the answer is not to prune from inside a job at all,
-        # and the directory's size is a NODE's problem to solve out of band
-        # (INF-961).
+        # Upstream should grow a sweep that cannot delete an object written
+        # during its own mark phase. Until then the answer is not to prune
+        # from inside a job at all, and the directory's size is a NODE's
+        # problem: it belongs to something that can see the whole directory
+        # and knows no build is reading it.
         expiry_note=""
         if [ "${DIRKIND:-}" = node-persistent ]; then
           if [ -n "${GOCACHE_EXPIRY:-}" ] && [ "${GOCACHE_EXPIRY}" != "0" ]; then
