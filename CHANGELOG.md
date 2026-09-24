@@ -5,6 +5,46 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
+## [0.1.4] - 2026-09-24
+
+### Fixed
+
+- **The agent kept two complete copies of every object it served.** One in the
+  directory the compiler opens by path -- which is the object, as far as the
+  build is concerned -- and one in the local disk tier, written on every fault
+  and every put.
+
+  Nothing read the second. A repeat lookup resolves the 84-byte action record
+  and finds the materialised file already there, so the tier's copy of an
+  output was written once and read never. On one `truvity/gitops` build that
+  is 3501 remote hits at around 1.2 MB: roughly 4.3 GB written to disk and
+  ignored, plus the page cache that came with it, charged to the container's
+  memory limit.
+
+  The disk tier now stores action records and declines output bodies. It is
+  still there, and still worth having, because the records are what a lookup
+  resolves first and holding them locally makes a repeat lookup a stat rather
+  than a round trip.
+
+- **A repeat lookup fetched the body it already had.** A lookup is an action
+  record naming an output, then the output. The agent had no way to act on the
+  record alone, so it read the whole object back out of a tier and handed it to
+  the object directory, which -- finding the file already present -- drained
+  the reader into `io.Discard`. A full read of a megabyte, to learn nothing,
+  1068 times in one build.
+
+  `GetIf` resolves the record and then asks whether the body is wanted.
+
+### Added
+
+- **`reused=` and `tier-io=` on the agent's summary line.** The first counts
+  lookups answered from an already-materialised file; the second reports bytes
+  read and written per tier.
+
+  Both exist because the totals could not answer the question that mattered --
+  which tier is being written to, and does anything read it back -- and two
+  rounds of this work were spent inferring that from wall-clock alone.
+
 ## [0.1.3] - 2026-09-24
 
 ### Fixed
