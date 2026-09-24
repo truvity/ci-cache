@@ -154,6 +154,147 @@ dir_case "node dir missing" job-local       "/nonexistent/ci-cache-$$"
 rm -rf "$node"
 
 # ---------------------------------------------------------------------------
+# The fetch step. The one step in this file that talks to the network, and
+# the one step that fails CLOSED -- so it earns more cases than a step that
+# only sets variables, not fewer.
+#
+# curl is stubbed: this harness has to run on a hosted runner with no
+# backend and no real download. The stub serves a file out of $SERVER_DIR
+# by the basename curl was asked to -o, so building a case is "put a file
+# where the download would have landed", never a real network call.
+# ---------------------------------------------------------------------------
+fetch_stub_curl() {
+    # $1 = bin dir to install the stub into.
+    cat > "$1/curl" << 'STUB'
+#!/bin/sh
+out=""
+url=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o) out="$2"; shift 2 ;;
+        -f|-s|-S|-L|-fsSL) shift ;;
+        *) url="$1"; shift ;;
+    esac
+done
+name="${url##*/}"
+[ -n "${FETCH_SPY:-}" ] && : >> "$FETCH_SPY"
+if [ -f "$SERVER_DIR/$name" ]; then
+    cp "$SERVER_DIR/$name" "$out"
+    exit 0
+fi
+exit 22
+STUB
+    chmod +x "$1/curl"
+}
+
+# sha256sum/shasum here is the HARNESS building a fixture, not the action's
+# own network path -- the same tool the action itself falls back to when
+# sha256sum is absent (see setup/action.yaml's sha256() helper).
+fetch_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+    else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+
+# A real archive and a real, correctly-hashed checksums.txt, so the verify
+# logic in the action is exercised for real rather than assumed.
+fetch_build_server() {
+    # $1 = server dir, $2 = archive filename.
+    mkdir -p "$1"
+    local work; work="$(mktemp -d)"
+    printf '#!/bin/sh\nexit 0\n' > "$work/go-cache-plugin"; chmod +x "$work/go-cache-plugin"
+    echo "BSD-3-Clause" > "$work/LICENSE"
+    tar -czf "$1/$2" -C "$work" go-cache-plugin LICENSE
+    rm -rf "$work"
+    printf '%s  %s\n' "$(fetch_sha256 "$1/$2")" "$2" > "$1/checksums.txt"
+}
+
+# $1 = work dir, $2 = CLIENT_VERSION, $3 = RUNNER_OS, $4 = RUNNER_ARCH,
+# $5 = server dir (may be empty or missing files, on purpose).
+fetch_run() {
+    local d="$1"
+    mkdir -p "$d/bin" "$d/tmp"
+    fetch_stub_curl "$d/bin"
+    extract "Fetch this release's go-cache-plugin" > "$d/step.sh"
+    : > "$d/path"
+    env -i PATH="$d/bin:/usr/bin:/bin" HOME="$d" \
+        RUNNER_TEMP="$d/tmp" GITHUB_PATH="$d/path" \
+        SERVER_DIR="$5" FETCH_SPY="$d/curl-called" \
+        CLIENT_VERSION="$2" RUNNER_OS="$3" RUNNER_ARCH="$4" \
+        bash "$d/step.sh" >"$d/log" 2>&1
+}
+
+# --- no client-version: the fast default path, and it must cost NOTHING on
+# the network, whether or not the step-level `if:` is the thing skipping it.
+checked=$((checked + 1))
+d="$(mktemp -d)"
+fetch_run "$d" "" Linux X64 "$d/unused-server"
+rc=$?
+[ "$rc" -ne 0 ] && { echo "FAIL [fetch empty]: exited $rc; empty client-version must be a no-op"; fail=$((fail + 1)); }
+[ -e "$d/curl-called" ] && { echo "FAIL [fetch empty]: curl was invoked with no client-version set"; fail=$((fail + 1)); }
+[ -s "$d/path" ] && { echo "FAIL [fetch empty]: wrote to GITHUB_PATH with no client-version set"; fail=$((fail + 1)); }
+rm -rf "$d"
+
+# --- a valid version: the binary lands where GITHUB_PATH now points, and
+# the log names the version as verified.
+checked=$((checked + 1))
+d="$(mktemp -d)"
+archive="go-cache-plugin_9.9.9_linux_amd64.tar.gz"
+fetch_build_server "$d/server" "$archive"
+fetch_run "$d" "9.9.9" Linux X64 "$d/server"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    echo "FAIL [fetch valid]: exited $rc; log:"
+    sed 's/^/     /' "$d/log"
+    fail=$((fail + 1))
+fi
+bindir="$(head -1 "$d/path" 2>/dev/null)"
+if [ -z "$bindir" ] || [ ! -x "$bindir/go-cache-plugin" ]; then
+    echo "FAIL [fetch valid]: go-cache-plugin did not land where GITHUB_PATH points"
+    fail=$((fail + 1))
+fi
+grep -q "verified" "$d/log" || { echo "FAIL [fetch valid]: no line naming the version as verified"; fail=$((fail + 1)); }
+rm -rf "$d"
+
+# --- a tampered checksums.txt: the one hard failure in this file. A hash
+# that matches nothing in the caller's own checksums.txt is, from this
+# step's side, indistinguishable from a MITM or a corrupted upload -- so it
+# must fail CLOSED, name the file, and never touch GITHUB_PATH.
+checked=$((checked + 1))
+d="$(mktemp -d)"
+archive="go-cache-plugin_9.9.9_linux_amd64.tar.gz"
+fetch_build_server "$d/server" "$archive"
+printf '0000000000000000000000000000000000000000000000000000000000000000  %s\n' "$archive" > "$d/server/checksums.txt"
+fetch_run "$d" "9.9.9" Linux X64 "$d/server"
+rc=$?
+[ "$rc" -eq 0 ] && { echo "FAIL [fetch tampered]: exited 0; a checksum mismatch must fail CLOSED"; fail=$((fail + 1)); }
+grep -q "$archive" "$d/log" || { echo "FAIL [fetch tampered]: failure message did not name $archive"; fail=$((fail + 1)); }
+[ -s "$d/path" ] && { echo "FAIL [fetch tampered]: wrote to GITHUB_PATH despite the checksum mismatch"; fail=$((fail + 1)); }
+rm -rf "$d"
+
+# --- a missing release asset (this version's release does not exist yet,
+# including the very first one, before its own tag): fail OPEN, same as
+# every other absence in this file.
+checked=$((checked + 1))
+d="$(mktemp -d)"
+mkdir -p "$d/server" # nothing in it to serve
+fetch_run "$d" "9.9.9" Linux X64 "$d/server"
+rc=$?
+[ "$rc" -ne 0 ] && { echo "FAIL [fetch missing asset]: exited $rc; a release that doesn't exist yet must fail open"; fail=$((fail + 1)); }
+grep -q "::warning::" "$d/log" || { echo "FAIL [fetch missing asset]: said nothing; a job that fell back must say so"; fail=$((fail + 1)); }
+rm -rf "$d"
+
+# --- an unrecognised OS/arch pair: warn and fall through, never fail, and
+# never even reach the network for a runner this action cannot map.
+checked=$((checked + 1))
+d="$(mktemp -d)"
+fetch_run "$d" "9.9.9" Windows X86 "$d/unused-server"
+rc=$?
+[ "$rc" -ne 0 ] && { echo "FAIL [fetch unrecognised]: exited $rc; an unmapped runner must fail open"; fail=$((fail + 1)); }
+[ -e "$d/curl-called" ] && { echo "FAIL [fetch unrecognised]: curl was invoked for a runner this action does not map"; fail=$((fail + 1)); }
+grep -q "::warning::" "$d/log" || { echo "FAIL [fetch unrecognised]: said nothing about the unrecognised runner"; fail=$((fail + 1)); }
+rm -rf "$d"
+
+# ---------------------------------------------------------------------------
 # The Go step. What it sets, and what it must not set.
 # ---------------------------------------------------------------------------
 go_case() {

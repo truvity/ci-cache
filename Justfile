@@ -116,8 +116,15 @@ bench-sweep server admin report="bench.jsonl":
     echo "wrote {{report}}"
 
 # Known vulnerabilities in what we import and call.
+#
+# third_party/go-cache-plugin is a SEPARATE module (see .goreleaser.yaml for
+# why), so govulncheck's own module-boundary rule means `./...` from here
+# does not reach it -- scanning it needs its own invocation, in its own
+# directory, or a redistributed binary's dependency tree goes unchecked
+# just because it isn't imported by anything of ours.
 vuln:
     govulncheck ./...
+    cd third_party/go-cache-plugin && govulncheck ./...
 
 # This repository is public; particulars are caller inputs, never defaults.
 leak-canary:

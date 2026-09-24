@@ -13,7 +13,8 @@
     "kubernetes-helm":       "latest",
     "lefthook":              "latest",
     "protoc-gen-connect-go": "latest",
-    "protoc-gen-go":         "latest"
+    "protoc-gen-go":         "latest",
+    "yq-go":                 "4.53.3"
   },
   "env": {
     "CGO_ENABLED": "0"

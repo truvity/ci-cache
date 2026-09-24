@@ -22,6 +22,56 @@ builds:
     ldflags:
       - -s -w -X main.version={{ .Version }}
 
+  # Redistributing an UNMODIFIED upstream binary: tailscale/go-cache-plugin,
+  # BSD-3-Clause, pinned to v0.1.1 -- the same version ci-plane's Dockerfile
+  # already `go install`s, so this is not a new pin, only a second place to
+  # get it from. Upstream ships no binary releases of its own, which is the
+  # whole reason this repository builds one: today the ONLY source for this
+  # binary is a ci-plane image rebuild, and that couples every plugin change
+  # to an estate-wide ARC rollout. Publishing it here lets a job pin a
+  # plugin build (setup/action.yaml's `client-version`) without touching
+  # ci-plane at all.
+  #
+  # `dir` points at third_party/go-cache-plugin, a SEPARATE Go module with
+  # its own go.mod/go.sum, not a tool dependency of this module's own
+  # go.mod. That is not the shortcut it looks like: upstream v0.1.1 was
+  # built against creachadair/mds v0.23.0 (old heapq.Queue.Update,
+  # old cache.LRU(n), old atomicfile.Tx(func(*File) error)), and this
+  # repository's own github.com/creachadair/gocache dependency already
+  # forces creachadair/mds to v0.31.0 for unrelated reasons -- a version
+  # that renamed or resignatured every one of those. Minimal Version
+  # Selection always takes the higher requirement across a single module
+  # graph, so adding go-cache-plugin as a `tool` directive in THIS
+  # module's go.mod does not build: it silently upgrades scheddle,
+  # atomicfile and mds/cache out from under a v0.1.1 that was never
+  # compiled against them. A nested module gives it its own MVS run, so it
+  # resolves against the dependency graph upstream actually tested,
+  # completely independent of what this repository's server code needs.
+  # `just vuln` scans it too (see the Justfile), so isolating the build
+  # graph does not mean losing sight of it.
+  #
+  # `main` is a local path, not the import path, because goreleaser's build
+  # step insists on it: internal/builders/golang/gomain.Check does an
+  # unconditional os.Stat(main) before it will build anything, so it cannot
+  # target a package that exists only in the module cache -- passing the
+  # import path fails with "couldn't find main file". The five files under
+  # cmd/go-cache-plugin/ are upstream's own cmd/go-cache-plugin at v0.1.1,
+  # copied byte-for-byte (verified with diff against the module cache; each
+  # keeps its own "Copyright (c) Tailscale Inc & AUTHORS / SPDX-License-
+  # Identifier: BSD-3-Clause" header) so there is a local dir for goreleaser
+  # to stat. They still build against this module's go.mod/go.sum, i.e.
+  # against the dependency versions upstream actually tested -- nothing
+  # about the isolation above changes. Refresh this copy in lockstep with
+  # any future version bump; it is not something to hand-edit.
+  - id: go-cache-plugin
+    dir: third_party/go-cache-plugin
+    main: ./cmd/go-cache-plugin
+    binary: go-cache-plugin
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+
 # One archive shape for every platform. Mixed formats are what breaks the
 # download step of whatever installs these -- and the shared release workflow
 # turns this archive into the Nix flake asset (`nix-flakes: ["ci-cache"]`),
@@ -32,6 +82,25 @@ archives:
     ids: [ci-cache]
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+  # Named with THIS repository's version, not upstream's v0.1.1, and that
+  # is deliberate rather than an oversight: the setup action asks for "this
+  # release's clients" (`client-version`), and the point is one version
+  # number that pins the chart, the action and the binaries inside this
+  # archive together. The binary itself still reports upstream's own
+  # version if asked -- only the archive name follows this repository's
+  # release train. Do not "fix" this to read v0.1.1.
+  #
+  # LICENSE here is the BSD-3-Clause condition for redistributing this
+  # binary form: the notice and licence text travel WITH the archive, not
+  # just in this repository's tree.
+  - id: go-cache-plugin
+    ids: [go-cache-plugin]
+    formats: [tar.gz]
+    name_template: "go-cache-plugin_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - src: third_party/go-cache-plugin/LICENSE
+        dst: LICENSE
 
 kos:
   - id: ci-cache
