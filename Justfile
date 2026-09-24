@@ -123,8 +123,18 @@ vuln:
 leak-canary:
     bash hack/leak-canary.sh
 
+# Execute the setup action's step bodies against a stubbed environment.
+#
+# A composite action is shell in a YAML envelope and actionlint does not read
+# it, so the only way to know what a step does is to run it. The cases assert
+# what each shape SETS, that a runner with no backend fails open rather than
+# failing, and that the steps which merely inspect the repository's own files
+# never edit them.
+setup-action:
+    bash hack/setup-cases.sh
+
 # Build everything a release would, locally and unpublished.
 snapshot:
     goreleaser release --snapshot --clean
 
-check: build test lint proto drift chart docs vuln leak-canary
+check: build test lint proto drift chart docs vuln leak-canary setup-action

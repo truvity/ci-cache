@@ -1,0 +1,229 @@
+name: Set up the CI caches
+description: >-
+  Detect which build systems a repository uses and wire each one to this
+  estate's cache. Fails open: a runner that cannot reach a backend gets the
+  plain toolchain caches and a warning, never a failed job.
+
+# Why this lives here and not in the shared CI workflows.
+#
+# The chart that runs the caches, the clients that talk to them and the
+# configuration that points one at the other are three halves of the same
+# thing, and they only agree if they are versioned together. Splitting them
+# is how a client ends up pointed at a service that left two releases ago --
+# which is exactly what happened to the Go module proxy: the org
+# variable named a Service that ci-plane had removed, `|` hid it, and every
+# preview job lost its module cache for days with nothing to show for it.
+#
+# This action is NESTED, never wired by a repository directly. Only
+# ci-workflows' setup-devbox calls it, so a caller keeps one pin and this
+# repository owns the how. A second estate-wide pin for every repository
+# was the cost that nearly made the idea not worth it.
+
+inputs:
+  bucket:
+    description: >-
+      The estate's cache bucket. From the CALLER's org variable -- this
+      repository is public and must never contain it. Empty disables every
+      bucket-backed cache, which is correct on a runner with no identity.
+    default: ""
+  region:
+    description: The bucket's region. Meaningful only with `bucket`.
+    default: ""
+  endpoint:
+    description: >-
+      S3 endpoint URL for a store that is not AWS (Cloudflare R2, MinIO).
+      Empty keeps the AWS default. From the caller's org variable: an
+      endpoint carries an account id.
+    default: ""
+  path-style:
+    description: >-
+      Address the bucket path-style rather than virtual-hosted. Needed where
+      a wildcard certificate does not cover a bucket subdomain. "true" to
+      enable.
+    default: ""
+  goproxy:
+    description: >-
+      GOPROXY for the job. Measured 2026-09-24: a local module
+      proxy saves about a second warm and costs double cold, so the estate
+      sets the public proxy here. Use a COMMA, never a pipe -- with `|` Go
+      falls through on any error and a broken proxy costs 4 ms and a
+      silence.
+    default: ""
+  bazel-remote:
+    description: >-
+      gRPC address of a bazel-remote for moon's task cache. Empty leaves
+      moon's own configuration alone.
+    default: ""
+  npm-registry:
+    description: Registry URL for Yarn/npm. Empty leaves the repository's own.
+    default: ""
+  languages:
+    description: >-
+      Override detection with a space-separated list (go nix yarn moon
+      gradle). Detection reads the tree, because a list of languages that
+      lives outside the repository drifts from it -- and the drift is
+      silent. Use this only where the tree genuinely does not say.
+    default: ""
+  client-version:
+    description: >-
+      Release of this repository to take client binaries from. Empty uses
+      whatever the runner image already has, which is the fast path and the
+      one with no network on it.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # Everything this action decides, decided once and printed.
+    #
+    # A job whose cache did nothing must SAY so in its own log. The
+    # alternative is what the estate had until yesterday: a variable naming
+    # a dead service, jobs quietly slower, and no line anywhere admitting
+    # it.
+    - name: Detect build systems and choose a cache directory
+      id: detect
+      shell: bash
+      run: |
+        set -uo pipefail
+
+        langs="${INPUT_LANGUAGES:-}"
+        if [ -z "$langs" ]; then
+          # Read the tree. A marker is a file the build system cannot work
+          # without, so its presence is not a guess.
+          [ -f go.mod ]                                   && langs="$langs go"
+          { [ -f devbox.json ] || [ -f flake.nix ]; }      && langs="$langs nix"
+          { [ -f yarn.lock ] || [ -f package-lock.json ]; } && langs="$langs yarn"
+          [ -d .moon ]                                    && langs="$langs moon"
+          { [ -f build.gradle ] || [ -f build.gradle.kts ]; } && langs="$langs gradle"
+          langs="$(echo "$langs" | tr -s ' ' | sed 's/^ //')"
+          src=detected
+        else
+          src=override
+        fi
+
+        # A hosted runner reaches neither the cluster nor the VPC endpoint
+        # and carries no pool identity, so no estate cache applies there.
+        # That is a fact about the runner, not a failure: wire nothing and
+        # say why. Whether a hosted-runner strategy is worth building is a
+        # separate question, and one nobody has measured yet.
+        usable=yes
+        if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+          usable=no
+          echo "::notice::ci-cache: GitHub-hosted runner; no estate cache is reachable, using the plain toolchain caches"
+        elif [ -z "${INPUT_BUCKET:-}" ]; then
+          usable=no
+          echo "::warning::ci-cache: no bucket configured; using the plain toolchain caches"
+        fi
+
+        # The node-persistent directory is a RUNNER mount (ci-plane's
+        # arc-runners chart) serving a CACHE need (this action). Two owners,
+        # one path, so neither hard-codes it: the chart exports
+        # CI_CACHE_NODE_DIR and this reads it. Absent -- a hosted runner, or
+        # a scale set without the mount -- falls back to the job's own temp,
+        # which is correct and merely cold.
+        if [ -n "${CI_CACHE_NODE_DIR:-}" ] && [ -d "${CI_CACHE_NODE_DIR}" ]; then
+          dir="${CI_CACHE_NODE_DIR}"; dirkind=node-persistent
+        else
+          dir="${RUNNER_TEMP}/ci-cache"; dirkind=job-local
+        fi
+        mkdir -p "$dir" 2>/dev/null || true
+
+        {
+          echo "languages=$langs"
+          echo "source=$src"
+          echo "usable=$usable"
+          echo "dir=$dir"
+          echo "dirkind=$dirkind"
+        } >> "$GITHUB_OUTPUT"
+
+        echo "ci-cache: languages [$langs] ($src), cache dir $dir ($dirkind), estate caches: $usable"
+      env:
+        INPUT_LANGUAGES: ${{ inputs.languages }}
+        INPUT_BUCKET: ${{ inputs.bucket }}
+
+    # Go: the build cache through go-cache-plugin, straight to the bucket.
+    #
+    # No server. Measured 2026-09-24: a cache server reached
+    # parity with the bucket in its own best case and lost to it in CI, and
+    # the fetch rate is set by `-p` rather than by anything the cache does.
+    # The plugin is the control that beat every arm, so it is the client.
+    - name: Wire the Go build cache
+      if: contains(steps.detect.outputs.languages, 'go') && steps.detect.outputs.usable == 'yes'
+      shell: bash
+      run: |
+        set -uo pipefail
+
+        if ! command -v go-cache-plugin >/dev/null 2>&1; then
+          echo "::warning::ci-cache: go-cache-plugin is not on PATH; the Go build cache is off for this job"
+          exit 0
+        fi
+
+        # Caller values go through heredocs with random delimiters: the
+        # NAME=VALUE form lets a value carrying a newline mint a second
+        # variable (CodeQL envvar-injection).
+        write_env() {
+          local d
+          d="EOF_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+          printf '%s<<%s\n%s\n%s\n' "$1" "$d" "$2" "$d" >> "$GITHUB_ENV"
+        }
+
+        {
+          echo "GOCACHEPROG=go-cache-plugin"
+          echo "GOCACHE_METRICS=1"
+          echo "GOCACHE_KEY_PREFIX=gocache"
+        } >> "$GITHUB_ENV"
+        write_env GOCACHE_DIR "$DIR/gocache"
+        write_env GOCACHE_S3_BUCKET "$BUCKET"
+        write_env GOCACHE_S3_REGION "$REGION"
+        # Only when given: an empty endpoint must leave the AWS default
+        # alone rather than write an empty one, which the SDK takes
+        # literally and then fails to resolve.
+        [ -n "$ENDPOINT" ]   && write_env GOCACHE_S3_ENDPOINT_URL "$ENDPOINT"
+        [ -n "$PATH_STYLE" ] && write_env GOCACHE_S3_PATH_STYLE "$PATH_STYLE"
+        [ -n "$GOPROXY_IN" ] && write_env GOPROXY "$GOPROXY_IN"
+
+        echo "ci-cache: go -> go-cache-plugin on s3://$BUCKET, cache dir $DIR/gocache"
+      env:
+        DIR: ${{ steps.detect.outputs.dir }}
+        BUCKET: ${{ inputs.bucket }}
+        REGION: ${{ inputs.region }}
+        ENDPOINT: ${{ inputs.endpoint }}
+        PATH_STYLE: ${{ inputs.path-style }}
+        GOPROXY_IN: ${{ inputs.goproxy }}
+
+    # The repo-file caches are CHECKED, not written.
+    #
+    # moon's remote host lives in .moon/workspace.yml and Yarn's registry in
+    # .yarnrc.yml -- files the repository owns and that already carry its
+    # own choices. An action that edited them would fight the tree and leave
+    # a diff behind. So: report the disagreement and let a human decide.
+    - name: Check the repository's own cache configuration
+      if: steps.detect.outputs.usable == 'yes'
+      shell: bash
+      run: |
+        set -uo pipefail
+        langs="${LANGS}"
+
+        case " $langs " in *" moon "*)
+          if [ -n "$BAZEL_REMOTE" ]; then
+            if [ -f .moon/workspace.yml ] && grep -q "$BAZEL_REMOTE" .moon/workspace.yml 2>/dev/null; then
+              echo "ci-cache: moon -> $BAZEL_REMOTE (already in .moon/workspace.yml)"
+            else
+              echo "::warning::ci-cache: moon is in use but .moon/workspace.yml does not name $BAZEL_REMOTE; its task cache is not going through the estate"
+            fi
+          fi
+        ;; esac
+
+        case " $langs " in *" yarn "*)
+          if [ -n "$NPM_REGISTRY" ]; then
+            if [ -f .yarnrc.yml ] && grep -q "$NPM_REGISTRY" .yarnrc.yml 2>/dev/null; then
+              echo "ci-cache: yarn -> $NPM_REGISTRY (already in .yarnrc.yml)"
+            else
+              echo "::warning::ci-cache: yarn is in use but .yarnrc.yml does not name $NPM_REGISTRY; installs go to the public registry"
+            fi
+          fi
+        ;; esac
+      env:
+        LANGS: ${{ steps.detect.outputs.languages }}
+        BAZEL_REMOTE: ${{ inputs.bazel-remote }}
+        NPM_REGISTRY: ${{ inputs.npm-registry }}
