@@ -78,6 +78,20 @@ what it saves is a full read from local disk; it saves a network fetch when
 the disk tier has been evicted under budget pressure while the materialised
 file survives — the constrained runner where it matters most.
 
+### Where an object is stored
+
+Once. The agent materialises every output into a directory the compiler opens
+by path, and that file is the object as far as the build is concerned.
+
+The local disk tier keeps the **action records** — 84 bytes each, and what a
+lookup resolves first — but not output bodies. A second complete copy there
+would be written on every fault and every put and read by nothing, because a
+repeat lookup is answered from the materialised file.
+
+The summary line reports `tier-io=` per tier, so the question "which tier is
+being written to, and does anything read it back" has an answer in the job
+log rather than in someone's model of the code.
+
 ### What a write waits for
 
 The toolchain calls `put` once per compiled object and waits for the answer
