@@ -179,7 +179,10 @@ func New(ctx context.Context, opts Options) (*Agent, error) {
 		return nil, fmt.Errorf("agent: local cache in %s: %w", dir, err)
 	}
 
-	localTiers := []tier.Tier{a.meterFor(a.d)}
+	// The filter is OUTSIDE the meter on purpose: a write it declines never
+	// reaches the meter, so the summary reports what actually touched the
+	// disk rather than what was offered to it.
+	localTiers := []tier.Tier{recordsOnly{a.meterFor(a.d)}}
 
 	// Tiers behind the local one are recorded into after the toolchain has
 	// been answered, so they are assembled separately. See put.

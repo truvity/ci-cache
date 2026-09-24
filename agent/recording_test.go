@@ -1,10 +1,13 @@
 package agent_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -387,4 +390,89 @@ func TestARepeatGetIsServedWithoutFetchingTheBody(t *testing.T) {
 	if st := a.Stats(); st.Reused == 0 {
 		t.Error("Stats().Reused is 0: the body was fetched after all, or the counter is not wired")
 	}
+}
+
+// dirSize is every byte under root, which is what "a second copy" costs.
+func dirSize(t *testing.T, root string) int64 {
+	t.Helper()
+
+	var n int64
+
+	err := filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil //nolint:nilerr // a missing tree is zero bytes, which is the answer
+		}
+
+		fi, err := d.Info()
+		if err == nil {
+			n += fi.Size()
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+
+	return n
+}
+
+// The object is stored once, not twice.
+//
+// The agent materialises every output into a directory the compiler opens by
+// path. The disk tier used to hold a complete second copy of the same bytes,
+// written on every fault and every put and read by nothing, because a repeat
+// lookup is answered from the materialised file. On one gitops build that was
+// about 4.3GB written and ignored.
+//
+// Asserted on the filesystem rather than on a counter: a counter measures
+// what the code thinks it did, and the claim here is about what is on the
+// disk.
+func TestAnOutputIsStoredOnceNotTwice(t *testing.T) {
+	a, err := agent.New(context.Background(), agent.Options{
+		CacheDir: t.TempDir(),
+		Logf:     func(string, ...any) {},
+	})
+	if err != nil {
+		t.Fatalf("New = %v", err)
+	}
+	t.Cleanup(a.Close)
+
+	s := newSession(t, a)
+
+	const size = 512 << 10
+
+	action := []byte("\xc1\xc2\xc3\xc4")
+	output := []byte("\xd1\xd2\xd3\xd4")
+	body := bytes.Repeat([]byte("x"), size)
+
+	if put := s.send(progRequest{
+		ID: 1, Command: "put", ActionID: action, OutputID: output, BodySize: int64(len(body)),
+	}, body); put.Err != "" {
+		t.Fatalf("put = %q", put.Err)
+	}
+
+	// Read it back, which is the path that used to fault a copy into the
+	// tier as well.
+	if hit := s.send(progRequest{ID: 2, Command: "get", ActionID: action}, nil); hit.Miss || hit.Err != "" {
+		t.Fatalf("get = %+v, want a hit", hit)
+	}
+
+	if got := s.send(progRequest{ID: 3, Command: "close"}, nil); got.Err != "" {
+		t.Fatalf("close = %q", got.Err)
+	}
+
+	objects := dirSize(t, filepath.Join(a.Dir(), "objects"))
+	if objects < size {
+		t.Errorf("the objects directory holds %d bytes, less than the %d-byte object: it is the copy the compiler opens and must be whole", objects, size)
+	}
+
+	// The tier keeps the action record and its index. Both are small; what
+	// must not be there is another half-megabyte.
+	tierBytes := dirSize(t, filepath.Join(a.Dir(), "tier"))
+	if tierBytes >= size {
+		t.Errorf("the disk tier holds %d bytes for a %d-byte object: the second copy is still being written", tierBytes, size)
+	}
+
+	s.close()
 }

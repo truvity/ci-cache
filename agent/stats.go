@@ -105,8 +105,22 @@ func (s Stats) Line() string {
 	for _, t := range s.Tiers {
 		parts = append(parts, fmt.Sprintf("%s:%d", t.Tier, t.Hits))
 	}
+
 	if len(parts) > 0 {
 		fmt.Fprintf(&b, " tier-hits=%s", strings.Join(parts, ","))
+	}
+
+	// Per-tier bytes, because the totals cannot answer the question that
+	// actually matters: which tier is being written to, and is anything
+	// reading it back. Two rounds of this work were spent guessing at that
+	// from wall-clock alone.
+	io := make([]string, 0, len(s.Tiers))
+	for _, t := range s.Tiers {
+		io = append(io, fmt.Sprintf("%s:r%s/w%s", t.Tier, humanBytes(t.BytesRead), humanBytes(t.BytesWritten)))
+	}
+
+	if len(io) > 0 {
+		fmt.Fprintf(&b, " tier-io=%s", strings.Join(io, ","))
 	}
 
 	var errs int64
