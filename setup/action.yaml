@@ -167,10 +167,44 @@ runs:
           printf '%s<<%s\n%s\n%s\n' "$1" "$d" "$2" "$d" >> "$GITHUB_ENV"
         }
 
+        # GOCACHE_EXPIRY=0 is what makes a SHARED cache directory safe, and
+        # it is written explicitly rather than left to the default because
+        # that default is the only thing standing between us and a
+        # cross-runner data race.
+        #
+        # go-cache-plugin prunes by calling cachedir.Cleanup(expiry), which
+        # returns nil for expiry <= 0 -- so at zero there is no pruner at
+        # all. Above zero, every job close runs a full mark-and-sweep over
+        # the directory: mark walks action/ and collects the object ids it
+        # references, then sweep walks output/ and REMOVES every object the
+        # mark phase did not see. On a node dir shared by two runners, an
+        # object written by runner B after A's mark phase is not in A's
+        # keep set, so A's sweep deletes it while B is still building.
+        #
+        # cachedir.Get is defensive -- it stats the object and compares its
+        # size, treating a mismatch as a miss -- so most of that race costs
+        # a refetch rather than a failure. What it cannot cover is the
+        # window AFTER Get has handed the compiler a path: the object is
+        # removed, and the compiler opens a file that is no longer there.
+        # That is a build failure with no explanation in it.
+        #
+        # Upstream should grow touch-on-use and a concurrency-safe trim.
+        # Until then the answer is not to prune from inside a job at all,
+        # and the directory's size is a NODE's problem to solve out of band
+        # (INF-961).
+        expiry_note=""
+        if [ "${DIRKIND:-}" = node-persistent ]; then
+          if [ -n "${GOCACHE_EXPIRY:-}" ] && [ "${GOCACHE_EXPIRY}" != "0" ]; then
+            echo "::warning::ci-cache: GOCACHE_EXPIRY=${GOCACHE_EXPIRY} is set on a SHARED cache directory; overriding it to 0. An in-job prune sweeps objects that other runners on this node are still using."
+          fi
+          expiry_note=", pruning off (shared dir)"
+        fi
+
         {
           echo "GOCACHEPROG=go-cache-plugin"
           echo "GOCACHE_METRICS=1"
           echo "GOCACHE_KEY_PREFIX=gocache"
+          echo "GOCACHE_EXPIRY=0"
         } >> "$GITHUB_ENV"
         write_env GOCACHE_DIR "$DIR/gocache"
         write_env GOCACHE_S3_BUCKET "$BUCKET"
@@ -182,9 +216,10 @@ runs:
         [ -n "$PATH_STYLE" ] && write_env GOCACHE_S3_PATH_STYLE "$PATH_STYLE"
         [ -n "$GOPROXY_IN" ] && write_env GOPROXY "$GOPROXY_IN"
 
-        echo "ci-cache: go -> go-cache-plugin on s3://$BUCKET, cache dir $DIR/gocache"
+        echo "ci-cache: go -> go-cache-plugin on s3://$BUCKET, cache dir $DIR/gocache${expiry_note}"
       env:
         DIR: ${{ steps.detect.outputs.dir }}
+        DIRKIND: ${{ steps.detect.outputs.dirkind }}
         BUCKET: ${{ inputs.bucket }}
         REGION: ${{ inputs.region }}
         ENDPOINT: ${{ inputs.endpoint }}

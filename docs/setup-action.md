@@ -80,6 +80,44 @@ temp, which is correct and merely cold — and the action prints which one it
 chose, so a job that quietly ran without the shared directory says so in its
 own log.
 
+### Sharing it is safe because nothing prunes
+
+A node-persistent directory is written by every runner on that node at
+once, so the question that decides whether the mount is a good idea is:
+what deletes from it?
+
+Today, nothing. `go-cache-plugin` prunes by calling
+`cachedir.Cleanup(expiry)`, and that returns `nil` for `expiry <= 0` — no
+pruner is installed at all. `GOCACHE_EXPIRY` defaults to `0`, so the
+default is the safe one. **This action pins it to `0` anyway**, because a
+safety property that depends on nobody setting a variable is not a safety
+property.
+
+Above zero it is genuinely unsafe to share. Every job close runs a full
+mark-and-sweep: mark walks `action/` and collects the object ids those
+actions reference; sweep walks `output/` and removes every object the mark
+phase did not see. An object written by runner B *after* runner A's mark
+phase is not in A's keep set, so A's sweep deletes it while B is still
+building against it.
+
+Most of that race is survivable — `cachedir.Get` stats the object and
+compares its size, treating a mismatch as a miss — so a swept object
+usually costs a refetch. What it cannot cover is the window *after* `Get`
+has handed the compiler a path: the file is removed, and the compiler opens
+something that is no longer there. A build failure with no explanation in
+it, on a node that looks healthy.
+
+So the action pins `GOCACHE_EXPIRY=0` in every job, and **warns** when the
+directory is shared and a caller had set it to something else. On a
+job-local directory it pins silently: nothing is at risk there, the
+directory dies with the job, and a warning printed on every job of every
+repository is a warning people learn to scroll past.
+
+The directory's size is therefore a **node's** problem, not a job's, and
+that is deliberate: trimming belongs to something that can see the whole
+directory and knows no build is reading it. Upstream growing touch-on-use
+and a concurrency-safe trim would change this; until then, see INF-961.
+
 ## Why every decision is printed
 
 The estate has already had a cache that was configured, believed in, and
