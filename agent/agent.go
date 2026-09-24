@@ -131,6 +131,12 @@ type Agent struct {
 	// two reads of whichever tier held them.
 	gets, hits, drops atomic.Int64
 
+	// reused counts gets answered from a file this build had already
+	// materialised -- no body fetched, nothing written. It is the whole
+	// point of the conditional fetch, so it is counted and reported rather
+	// than assumed to be working.
+	reused atomic.Int64
+
 	// lostRecords counts objects that reached local disk but were never
 	// recorded in the chain -- a drain that timed out, or a file that could
 	// not be reopened. Separate from drops, which the chain refused.
@@ -331,14 +337,42 @@ func (a *Agent) Dir() string { return a.dir }
 // unreadable: the toolchain's only use for an error is to stop the build.
 func (a *Agent) get(ctx context.Context, actionID string) (outputID, diskPath string, _ error) {
 	a.gets.Add(1)
-	id, body, m, ok, err := a.cache.Get(ctx, actionID)
+
+	// The body is fetched only if the object is not already materialised.
+	//
+	// Within one build the toolchain asks repeatedly for objects it has
+	// already been handed, and the action record -- 84 bytes -- is the only
+	// thing needed to discover that. Fetching the object to throw it away
+	// was the largest avoidable cost on this path: on a remote hit it was a
+	// megabyte over the network for a file already on the disk.
+	var reuse string
+
+	id, body, m, ok, err := a.cache.GetIf(ctx, actionID, func(outputID string, _ time.Time) bool {
+		// Size deliberately unchecked: objects are renamed into place after
+		// their length is verified, so a file that is present is whole, and
+		// the record does not carry a size to check against anyway.
+		p, have := a.objects.have(outputID, 0)
+		reuse = p
+
+		return !have
+	})
 	if err != nil {
 		a.logf("get %s: %v (treated as a miss)", actionID, err)
 		return "", "", nil
 	}
+
 	if !ok {
 		return "", "", nil
 	}
+
+	if body == nil {
+		// Already on disk. Nothing was transferred and nothing was written.
+		a.hits.Add(1)
+		a.reused.Add(1)
+
+		return id, reuse, nil
+	}
+
 	defer body.Close()
 
 	path, _, err := a.objects.write(id, m.Size, m.ModTime, body)

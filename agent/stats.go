@@ -37,6 +37,12 @@ type Stats struct {
 	// and not an error.
 	Drops int64
 
+	// Reused are gets answered from a file this build had already
+	// materialised: no body fetched, nothing written. It is reported because
+	// a conditional fetch that silently never fires is indistinguishable
+	// from one that is not there.
+	Reused int64
+
 	// LostRecords are objects that reached local disk but never reached the
 	// chain: a drain that ran out of time, or a file that could not be
 	// reopened. Distinct from Drops, which the chain saw and refused.
@@ -67,6 +73,7 @@ func (a *Agent) Stats() Stats {
 		Hits:        a.hits.Load(),
 		Drops:       a.drops.Load(),
 		LostRecords: a.lostRecords.Load(),
+		Reused:      a.reused.Load(),
 		Tiers:       make([]TierStats, 0, len(a.meters)),
 	}
 	s.Misses = s.Gets - s.Hits
@@ -106,8 +113,8 @@ func (s Stats) Line() string {
 	for _, t := range s.Tiers {
 		errs += t.Errors + t.PutErrors
 	}
-	fmt.Fprintf(&b, " read=%s wrote=%s drops=%d lost=%d errors=%d degraded=%t elapsed=%s",
-		humanBytes(s.BytesRead), humanBytes(s.BytesWritten),
+	fmt.Fprintf(&b, " reused=%d read=%s wrote=%s drops=%d lost=%d errors=%d degraded=%t elapsed=%s",
+		s.Reused, humanBytes(s.BytesRead), humanBytes(s.BytesWritten),
 		s.Drops, s.LostRecords, errs, s.Degraded, s.Elapsed.Round(time.Millisecond))
 	return b.String()
 }
