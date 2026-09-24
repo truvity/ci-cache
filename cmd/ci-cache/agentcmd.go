@@ -82,6 +82,11 @@ func agentFlags() []cli.Flag {
 			Sources: cli.EnvVars(envAgentBudget),
 		},
 		&cli.IntFlag{
+			Name:    "max-requests",
+			Sources: cli.EnvVars(envPrefix + "AGENT_MAX_REQUESTS"),
+			Usage:   "cache operations the toolchain may have in flight; 0 keeps the library default of one per CPU, which throttles an I/O-bound handler",
+		},
+		&cli.IntFlag{
 			Name:    "upload-workers",
 			Sources: cli.EnvVars("CI_CACHE_AGENT_UPLOAD_WORKERS"),
 			Usage:   "how many objects may be recorded into the chain at once, behind the build; 0 picks a default",
@@ -125,6 +130,7 @@ func runAgent(ctx context.Context, cmd *cli.Command, remote string, direct bool)
 		CacheDir:      cmd.String("cache-dir"),
 		LocalBudget:   cmd.Int64("local-budget"),
 		UploadWorkers: cmd.Int("upload-workers"),
+		MaxRequests:   cmd.Int("max-requests"),
 		Metrics:       cmd.Bool("metrics"),
 		Label:         cmd.String("label"),
 		Logf:          agentLogf(log),

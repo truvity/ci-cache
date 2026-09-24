@@ -75,6 +75,12 @@ type Options struct {
 	// laptop it is the whole chain.
 	Bucket *config.Store
 
+	// MaxRequests bounds how many cache operations the toolchain may have
+	// in flight at once. Zero keeps the library's default, which is the
+	// core count -- see Serve for why that is the wrong unit for this
+	// handler.
+	MaxRequests int
+
 	// UploadWorkers bounds how many objects are being recorded into the
 	// chain at once, behind the toolchain. Zero picks a default; see
 	// uploads.go for why that default has a floor rather than tracking the
@@ -279,11 +285,24 @@ func (a *Agent) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 	}()
 
+	// MaxRequests is set EXPLICITLY, because the library's default is
+	// runtime.NumCPU() and this handler is not CPU work.
+	//
+	// Measured 2026-09-24, a warm local build: the agent used 2.43s of CPU
+	// across a 60s profile -- 4% of one core. It spends the rest waiting on
+	// S3 and on the disk. Sizing its in-flight requests by core count
+	// therefore throttles it to the one resource it is not using: on a
+	// 2-vCPU runner, two lookups at a time against a store whose round trip
+	// is tens of milliseconds.
+	//
+	// Zero keeps the library's default, so a caller that wants the old
+	// behaviour can still ask for it.
 	srv := &gocache.Server{
-		Get:   a.get,
-		Put:   a.put,
-		Close: a.protocolClose,
-		Logf:  a.logf,
+		Get:         a.get,
+		Put:         a.put,
+		Close:       a.protocolClose,
+		Logf:        a.logf,
+		MaxRequests: a.opts.MaxRequests,
 	}
 	return srv.Run(ctx, in, out)
 }
