@@ -10,6 +10,10 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"github.com/truvity/ci-cache/agent"
+	"net"
+	"net/http"
+	"net/http/pprof"
+	"time"
 )
 
 // The agent's own settings are not part of config.Config: they belong to one
@@ -93,6 +97,11 @@ func agentFlags() []cli.Flag {
 			Sources: cli.EnvVars(envAgentMetrics, envLegacyMetrics),
 		},
 		&cli.StringFlag{
+			Name:    "pprof",
+			Usage:   "serve net/http/pprof on this address (e.g. 127.0.0.1:6060); for profiling a build, never for a runner fleet",
+			Sources: cli.EnvVars(envPrefix + "AGENT_PPROF"),
+		},
+		&cli.StringFlag{
 			Name:    "log-level",
 			Value:   "warn",
 			Usage:   "debug, info, warn or error; the agent logs to stderr",
@@ -138,6 +147,10 @@ func runAgent(ctx context.Context, cmd *cli.Command, remote string, direct bool)
 		log.Warn("no cache server and no object store configured: this is a local cache only",
 			"hint", "set --remote or "+envAgentRemote)
 	}
+	if addr := cmd.String("pprof"); addr != "" {
+		startPprof(addr, opts.Logf)
+	}
+
 	return agent.Run(ctx, opts)
 }
 
@@ -155,4 +168,34 @@ func agentLogf(log *slog.Logger) func(string, ...any) {
 		}
 		log.Debug(fmt.Sprintf(format, args...))
 	}
+}
+
+// startPprof serves the standard profiles on addr for the life of the agent.
+//
+// The agent is a subprocess of `go`, so there is no other way to profile it
+// under a real build: it must expose the endpoints itself. Everything goes
+// to the agent's log and never to stdout, which is the protocol's channel.
+// A listen failure is logged and ignored -- a build must not fail because
+// a profiling port was busy.
+func startPprof(addr string, logf func(string, ...any)) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		logf("pprof: listen %s: %v (profiling disabled)", addr, err)
+
+		return
+	}
+
+	logf("pprof: serving on http://%s/debug/pprof/", ln.Addr())
+
+	go func() {
+		srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		_ = srv.Serve(ln)
+	}()
 }
