@@ -1,3 +1,32 @@
+// A module of its own, so upstream's dependency graph resolves the way
+// upstream tested it.
+//
+// Folded into the root go.mod this does not build. The root already pulls
+// creachadair/gocache, which requires a newer creachadair/mds than the
+// pinned go-cache-plugin was compiled against; one module graph means one
+// MVS run, the higher version wins, and three APIs move under code that
+// cannot ask for the older one (Queue.Update became SetUpdate,
+// atomicfile.Tx and cache.LRU changed signatures). Isolation is the fix,
+// and it is the whole reason this directory is a module.
+//
+// So: `github.com/creachadair/mds` below is LOAD-BEARING at upstream's
+// version. Moving it forward here reproduces exactly the breakage this
+// module exists to avoid. When it needs to move, the way is to bump
+// `github.com/tailscale/go-cache-plugin` -- which brings a dependency set
+// upstream has actually built against -- and re-vendor cmd/ to match
+// (hack/vendored-upstream-is-pristine.sh enforces the second half).
+// Renovate is told to leave mds alone here for that reason.
+//
+// Three dependencies ARE ahead of upstream's pins, deliberately, because
+// govulncheck found live findings at upstream's own versions:
+// golang.org/x/mod (GO-2026-6179, GO-2026-6180) and
+// aws-sdk-go-v2's eventstream and s3 (GO-2026-5764). Safe to move only
+// because this module is isolated -- none of it reaches the graph that
+// made isolation necessary. Consequence worth knowing: the binary this
+// repository releases is therefore NOT built from an identical dependency
+// set to the one ci-plane's runner image builds with `go install`, even at
+// the same upstream version. If a measurement ever turns on a difference
+// between those two binaries, that is where to look first.
 module github.com/truvity/ci-cache/third_party/go-cache-plugin
 
 go 1.27.0

@@ -144,4 +144,8 @@ setup-action:
 snapshot:
     goreleaser release --snapshot --clean
 
-check: build test lint proto drift chart docs vuln leak-canary setup-action
+# The vendored upstream cmd/ must match the version its go.mod pins.
+vendored:
+    bash hack/vendored-upstream-is-pristine.sh
+
+check: build test lint proto drift chart docs vuln leak-canary setup-action vendored

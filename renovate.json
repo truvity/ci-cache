@@ -58,6 +58,19 @@
         "go"
       ],
       "enabled": false
+    },
+    {
+      "description": "creachadair/mds is pinned to upstream go-cache-plugin's version inside third_party/go-cache-plugin, and moving it breaks the build -- that mismatch is the reason the directory is a separate module at all (see its go.mod). Left to Renovate this becomes a grouped, automerging PR that can never go green, and because the group carries every other non-major bump, one un-bumpable dependency would block them all. The way this dependency moves is a go-cache-plugin bump plus a re-vendor, not a bump of its own.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "third_party/go-cache-plugin/go.mod"
+      ],
+      "matchDepNames": [
+        "github.com/creachadair/mds"
+      ],
+      "enabled": false
     }
   ],
   "vulnerabilityAlerts": {
