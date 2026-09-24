@@ -25,7 +25,7 @@ jobs:
   # `helm template` and nothing more, and `leak-canary` because this
   # repository is public and a particular cannot be unpublished.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@88fcad83e4140728da1019fe737fbe88e58b7ea6 # v3.9.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@d2ee68415ccb1523a21504598dcce0e0c1e39c68 # v3.12.1
     with:
       recipes: '["build", "test", "lint", "proto", "drift", "chart", "docs", "vuln", "leak-canary", "setup-action"]'
 
@@ -37,7 +37,7 @@ jobs:
   # corrupted entry served to every build afterwards rather than a crash
   # somebody notices.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@88fcad83e4140728da1019fe737fbe88e58b7ea6 # v3.9.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@d2ee68415ccb1523a21504598dcce0e0c1e39c68 # v3.12.1
     with:
       recipes: '["race"]'
 
