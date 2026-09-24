@@ -141,6 +141,118 @@ runs:
         INPUT_LANGUAGES: ${{ inputs.languages }}
         INPUT_BUCKET: ${{ inputs.bucket }}
 
+    # Pin a plugin build without touching ci-plane.
+    #
+    # The runner image is where go-cache-plugin comes from today, and that
+    # ties every plugin change to a ci-plane release plus an ARC rollout of
+    # the whole fleet. `client-version` is this repository's OWN release
+    # (goreleaser publishes go-cache-plugin_<version>_<os>_<arch>.tar.gz
+    # alongside ci-cache -- see .goreleaser.yaml for why the archive is
+    # named after THIS repository's version while the binary inside is
+    # upstream's), so a job can ask for one without ci-plane in the loop at
+    # all. Fetching ci-cache itself is deliberately NOT here: the agent
+    # lost its own measurement against the bucket client and is retired for
+    # Go (see "Wire the Go build cache" below), so there is nothing this
+    # step would do with it.
+    #
+    # This step is the ONE exception to the file's fail-open design, and it
+    # earns the exception rather than assuming it: everywhere else, a
+    # runner that cannot reach a backend gets the plain toolchain caches
+    # and a warning, because a slower job beats a failed one. A binary that
+    # fails its own checksum is a different kind of problem -- a tampered
+    # or corrupted download -- and running it anyway is worse than the slow
+    # path this whole action exists to avoid when it can't be sure. So
+    # `set -euo pipefail` here, where every other step in this file
+    # deliberately uses `-uo` alone, and every OTHER failure mode (no
+    # input, an unrecognised runner, a release that does not exist yet)
+    # still falls through to the image's own binary and exits 0.
+    - name: Fetch this release's go-cache-plugin
+      if: inputs.client-version != ''
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Repeated here, not just in the step-level `if:` above: the case
+        # harness (hack/setup-cases.sh) extracts and executes this body
+        # directly against a stubbed environment, bypassing `if:` entirely.
+        # Empty is the fast default path and must cost zero network calls
+        # whichever way this step is invoked.
+        if [ -z "${CLIENT_VERSION:-}" ]; then
+          exit 0
+        fi
+
+        # RUNNER_OS/RUNNER_ARCH name the runner this step is executing ON,
+        # which is also the machine the fetched binary has to run on. A
+        # pair this action doesn't recognise is a fact about the runner,
+        # not a reason to fail the job -- warn and leave the image's own
+        # binary (if any) in place, same as every other detection in this
+        # file.
+        case "${RUNNER_OS:-}" in
+          Linux) os=linux ;;
+          macOS) os=darwin ;;
+          *) os="" ;;
+        esac
+        case "${RUNNER_ARCH:-}" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) arch="" ;;
+        esac
+        if [ -z "$os" ] || [ -z "$arch" ]; then
+          echo "::warning::ci-cache: unrecognised runner (${RUNNER_OS:-?}/${RUNNER_ARCH:-?}) for client-version=${CLIENT_VERSION}; falling back to whatever the image already has"
+          exit 0
+        fi
+
+        archive="go-cache-plugin_${CLIENT_VERSION}_${os}_${arch}.tar.gz"
+        base="https://github.com/truvity/ci-cache/releases/download/v${CLIENT_VERSION}"
+        dl="${RUNNER_TEMP}/ci-cache-client-dl"
+        bin="${RUNNER_TEMP}/ci-cache-client-bin"
+        mkdir -p "$dl" "$bin"
+
+        # A release that doesn't exist yet -- including THIS one, before
+        # its first tag -- is the ordinary fail-open case: no asset, no
+        # binary, a warning, and the image's own copy (if any) keeps
+        # working. It is not the same failure as a checksum that doesn't
+        # match a file we DID get.
+        if ! curl -fsSL -o "$dl/checksums.txt" "$base/checksums.txt"; then
+          echo "::warning::ci-cache: no checksums.txt for client-version=${CLIENT_VERSION} at $base; falling back to whatever the image already has"
+          exit 0
+        fi
+        if ! curl -fsSL -o "$dl/$archive" "$base/$archive"; then
+          echo "::warning::ci-cache: no $archive for client-version=${CLIENT_VERSION} at $base; falling back to whatever the image already has"
+          exit 0
+        fi
+
+        # sha256sum is GNU coreutils; macOS runners carry shasum instead.
+        sha256() {
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$1" | awk '{print $1}'
+          else
+            shasum -a 256 "$1" | awk '{print $1}'
+          fi
+        }
+
+        # Field match, not a grep pattern, so a version string's own dots
+        # and pluses never need escaping.
+        want="$(awk -v f="$archive" '$2 == f {print $1}' "$dl/checksums.txt")"
+        if [ -z "$want" ]; then
+          echo "::error::ci-cache: checksums.txt has no entry for $archive; refusing to run an unverified binary"
+          exit 1
+        fi
+        got="$(sha256 "$dl/$archive")"
+        if [ "$want" != "$got" ]; then
+          echo "::error::ci-cache: checksum mismatch for $archive (want $want, got $got); refusing to run an unverified binary"
+          exit 1
+        fi
+
+        tar -xzf "$dl/$archive" -C "$bin"
+        # Prepended, so this build wins over whatever copy the image
+        # already carries on PATH.
+        echo "$bin" >> "$GITHUB_PATH"
+
+        echo "ci-cache: go-cache-plugin v${CLIENT_VERSION} fetched and checksum-verified for $os/$arch"
+      env:
+        CLIENT_VERSION: ${{ inputs.client-version }}
+
     # Go: the build cache through go-cache-plugin, straight to the bucket.
     #
     # No server. Measured 2026-09-24: a cache server reached
