@@ -167,6 +167,7 @@ go_case() {
     : > "$d/env"
     env -i PATH="$d/bin:/usr/bin:/bin" HOME="$d" GITHUB_ENV="$d/env" \
         DIR="$d/cache" BUCKET=b REGION=r ENDPOINT= PATH_STYLE= GOPROXY_IN= \
+        DIRKIND=job-local \
         "$@" bash "$d/step.sh" >/dev/null 2>&1
     local rc=$?
 
@@ -184,19 +185,83 @@ go_case() {
     cd "$here" || true; rm -rf "$d"
 }
 
-base="GOCACHEPROG GOCACHE_DIR GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_REGION"
+# GOCACHE_EXPIRY sorts between DIR and KEY_PREFIX, and GOCACHEPROG still
+# comes first: in the C locale 'P' (0x50) precedes '_' (0x5F).
+base="GOCACHEPROG GOCACHE_DIR GOCACHE_EXPIRY GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_REGION"
 # Sorted in the C locale, which is where the optional keys land: S3_BUCKET
 # < S3_ENDPOINT_URL < S3_PATH_STYLE < S3_REGION, and GOCACHE* before GOPROXY
 # because 'C' < 'P'. Writing these out rather than composing them keeps the
 # expectation a statement about the action and not about my sort order.
-endpoint_want="GOCACHEPROG GOCACHE_DIR GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_ENDPOINT_URL GOCACHE_S3_REGION"
-pathstyle_want="GOCACHEPROG GOCACHE_DIR GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_PATH_STYLE GOCACHE_S3_REGION"
+endpoint_want="GOCACHEPROG GOCACHE_DIR GOCACHE_EXPIRY GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_ENDPOINT_URL GOCACHE_S3_REGION"
+pathstyle_want="GOCACHEPROG GOCACHE_DIR GOCACHE_EXPIRY GOCACHE_KEY_PREFIX GOCACHE_METRICS GOCACHE_S3_BUCKET GOCACHE_S3_PATH_STYLE GOCACHE_S3_REGION"
 go_case "aws defaults"   "$base"
 # An empty endpoint must not be WRITTEN empty: the SDK takes it literally
 # and then fails to resolve, which looks like a broken bucket.
 go_case "with endpoint"  "$endpoint_want" ENDPOINT=https://x.r2.cloudflarestorage.com
 go_case "with pathstyle" "$pathstyle_want" PATH_STYLE=true
 go_case "with goproxy"   "$base GOPROXY" GOPROXY_IN=https://proxy.golang.org,direct
+
+# ---------------------------------------------------------------------------
+# GOCACHE_EXPIRY on a SHARED directory.
+#
+# This is the one setting that decides whether a node-persistent cache dir
+# is safe. go-cache-plugin prunes by cachedir.Cleanup(expiry), which is a
+# no-op at <= 0; above zero it mark-and-sweeps the whole directory at job
+# close, deleting every object its mark phase did not see -- including one
+# another runner on the same node wrote a moment ago and is still building
+# against.
+#
+# So the action pins it to 0 always, and SAYS SO when the directory is
+# shared and somebody had set it. Both halves are cases: a pin nobody can
+# see is a pin nobody will keep, and a warning that does not fire is the
+# failure mode this whole file exists for.
+# ---------------------------------------------------------------------------
+# go_case above compares WHICH variables a shape sets; this compares the
+# one VALUE that has a safety property attached to it.
+expiry_case() {
+    local label="$1" dirkind="$2" incoming="$3" want_warn="$4"
+    checked=$((checked + 1))
+
+    local d; d="$(mktemp -d)"
+    mkdir -p "$d/bin"
+    printf '#!/bin/sh\nexit 0\n' > "$d/bin/go-cache-plugin"; chmod +x "$d/bin/go-cache-plugin"
+    extract "Wire the Go build cache" > "$d/step.sh"
+    : > "$d/env"
+
+    local -a extra=()
+    [ -n "$incoming" ] && extra=(GOCACHE_EXPIRY="$incoming")
+
+    env -i PATH="$d/bin:/usr/bin:/bin" HOME="$d" GITHUB_ENV="$d/env" \
+        DIR="$d/cache" BUCKET=b REGION=r ENDPOINT= PATH_STYLE= GOPROXY_IN= \
+        DIRKIND="$dirkind" "${extra[@]}" \
+        bash "$d/step.sh" >"$d/log" 2>&1
+
+    local got; got="$(grep -E '^GOCACHE_EXPIRY=' "$d/env" | tail -1 | cut -d= -f2-)"
+    if [ "$got" != "0" ]; then
+        echo "FAIL [expiry $label]: GOCACHE_EXPIRY=\"$got\" in the job env, want 0"
+        fail=$((fail + 1))
+    fi
+
+    local warned=no
+    grep -q '::warning::.*GOCACHE_EXPIRY' "$d/log" && warned=yes
+    if [ "$warned" != "$want_warn" ]; then
+        echo "FAIL [expiry $label]: warned=$warned, want $want_warn"
+        echo "     log: $(cat "$d/log")"
+        fail=$((fail + 1))
+    fi
+
+    rm -rf "$d"
+}
+
+#            label                        dirkind          incoming  warn?
+expiry_case "shared, caller set it"      node-persistent  "168h"    yes
+expiry_case "shared, caller set zero"    node-persistent  "0"       no
+expiry_case "shared, unset"              node-persistent  ""        no
+# A job-local directory is thrown away with the job, so pruning it is work
+# nobody benefits from -- pinned off too, but silently: nothing is at risk,
+# and a warning on every job of every repository is a warning people learn
+# to scroll past.
+expiry_case "job-local, caller set it"   job-local        "168h"    no
 
 # A missing client is a slower job, not a failed one -- the runner image may
 # predate the binary. The agent's one hard failure (a binary that fails
