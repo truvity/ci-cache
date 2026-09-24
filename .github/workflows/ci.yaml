@@ -27,7 +27,7 @@ jobs:
   recipes:
     uses: truvity/ci-workflows/.github/workflows/check.yaml@1ad087e4d51842349d58c3db41a7e17db3459470 # v3.7.1
     with:
-      recipes: '["build", "test", "lint", "proto", "drift", "chart", "docs", "vuln", "leak-canary"]'
+      recipes: '["build", "test", "lint", "proto", "drift", "chart", "docs", "vuln", "leak-canary", "setup-action"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
   # everything else builds with cgo off — which is what makes the binary

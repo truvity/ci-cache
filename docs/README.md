@@ -9,6 +9,7 @@ pick the road you are on.
 | pointing a build at the cache | the [client page](#clients) for your tool |
 | installing it in a cluster | [AWS S3](deploy/aws-s3.md) or [Cloudflare R2](deploy/cloudflare-r2.md) |
 | running one | [operations](operations.md) — watermarks, the three wipes, the metrics, drain and restart |
+| wiring a repository's CI | [the setup action](setup-action.md) — what it detects, where it writes, how it fails open |
 | measuring one | [benchmarking](benchmarking.md) — the corpus, the three scenarios, and why a port-forwarded number is not a baseline |
 | asking why it is shaped this way | [the decisions](decisions/README.md) |
 
