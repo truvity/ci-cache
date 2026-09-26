@@ -2,6 +2,8 @@ module github.com/truvity/ci-cache
 
 go 1.27.0
 
+toolchain go1.27.1
+
 require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/grpcreflect v1.3.0
