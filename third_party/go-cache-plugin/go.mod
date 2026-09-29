@@ -37,13 +37,13 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.29.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.3
-	github.com/creachadair/atomicfile v0.3.7
-	github.com/creachadair/command v0.1.20
-	github.com/creachadair/flax v0.0.4
-	github.com/creachadair/gocache v0.0.0-20250108235800-51cd8478f1c9
-	github.com/creachadair/mhttp v0.0.0-20241114003125-97da0a4f17b1
-	github.com/creachadair/taskgroup v0.13.2
-	github.com/creachadair/tlsutil v0.0.0-20241111194928-a9f540254538
+	github.com/creachadair/atomicfile v0.4.2
+	github.com/creachadair/command v0.2.11
+	github.com/creachadair/flax v0.1.0
+	github.com/creachadair/gocache v0.0.0-20260919024057-fcaeb30adcdc
+	github.com/creachadair/mhttp v0.0.0-20260906154317-643db70e3068
+	github.com/creachadair/taskgroup v0.14.4
+	github.com/creachadair/tlsutil v0.0.0-20260822153017-42c1f3eb5988
 	github.com/goproxy/goproxy v0.18.0
 	github.com/tailscale/go-cache-plugin v0.1.1
 	golang.org/x/sys v0.32.0
@@ -66,8 +66,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.13 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.13 // indirect
 	github.com/aws/smithy-go v1.24.2 // indirect
-	github.com/creachadair/mds v0.23.0 // indirect
-	github.com/creachadair/msync v0.4.0 // indirect
+	github.com/creachadair/mds v0.31.0 // indirect
+	github.com/creachadair/msync v0.10.1 // indirect
 	github.com/creachadair/scheddle v0.0.0-20241121045015-b2e30c9594a1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250223041408-d3c622f1b874 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
@@ -75,5 +75,5 @@ require (
 	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.36.0 // indirect
-	golang.org/x/sync v0.13.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 )
