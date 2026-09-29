@@ -185,8 +185,11 @@ Both are opt-in and empty by default, because a hosted runner has no VPC
 endpoint and no pool identity: pointing a build cache at a bucket there would
 fail every build.
 
-Today `go-cache-bucket` writes `GOCACHEPROG=go-cache-plugin` and gives the
-program the bucket directly. Moving a runner pool to this service replaces
+Today `go-cache-bucket` writes `GOCACHEPROG` naming the setup action's
+`gocacheprog`, which starts `go-cache-plugin` and gives it the bucket
+directly. The wrapper exists because the plugin, unlike the agent, has no
+breaker of its own. See [the setup action](../setup-action.md#a-bucket-without-credentials)
+for what it guards. Moving a runner pool to this service replaces
 that program with `ci-cache agent --remote …`, and the pool then needs no
 bucket credentials at all — the server holds them. That is the migration, and
 the legacy prefix above is what makes it free.

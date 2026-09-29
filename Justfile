@@ -155,8 +155,15 @@ leak-canary:
 # what each shape SETS, that a runner with no backend fails open rather than
 # failing, and that the steps which merely inspect the repository's own files
 # never edit them.
+#
+# Then real cold builds through the shipped go-cache-plugin, with a
+# credential_process that is refused, one that hangs, one that works and a
+# profile that is missing: each must finish, and a refused credential must
+# be asked for at most three times. A control case runs without the wrapper
+# and must NOT finish, or the cases are testing nothing.
 setup-action:
     bash hack/setup-cases.sh
+    bash hack/gocacheprog-cases.sh
 
 # Build everything a release would, locally and unpublished.
 snapshot:

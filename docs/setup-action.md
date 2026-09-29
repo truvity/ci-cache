@@ -60,10 +60,53 @@ A job whose cache is unavailable must be slower, never broken:
 | GitHub-hosted runner | wires nothing, says why, exits 0 — no estate backend is reachable from there |
 | no bucket configured | wires nothing, warns, exits 0 |
 | client binary not on `PATH` | that cache is off for the job, warns, exits 0 |
+| the Go cache cannot get credentials | the bucket is off for that go command after at most three attempts or ten seconds, one line says why, and the build carries on with its local cache |
+| the Go cache's AWS profile is named but not configured | that go command runs local-only, one line says why |
 | a client binary that fails **checksum** verification | the job **fails** |
 
 The last is the one hard failure, and it is the right one: running an
 unverified binary is worse than a slow build.
+
+### A bucket without credentials
+
+`go-cache-plugin` asks the AWS SDK for a credential on every request to the
+bucket, and the SDK keeps a credential only once it has one. A
+`credential_process` that **fails** is therefore run again for the next
+request, and for the one after that, for the whole build. The plugin counts
+each refusal as a miss and carries on, so nothing fails, but every miss waits
+for the refusal. A process refused in half a second, which is what a token
+exchange costs to be turned down, holds a large `go vet` at about two cache
+requests a second. That build does not finish inside a job's timeout.
+
+Neither half can be told to stop. The SDK has no setting that caches a
+failed credential, and the plugin is upstream's binary, redistributed
+unmodified. So the action does not name the plugin in `GOCACHEPROG`. It
+names `setup/gocacheprog`, which starts the plugin with a private copy of
+the AWS config. In that copy the profile's `credential_process` goes through
+`setup/credential-guard`:
+
+- The original command runs as before, bounded by the time budget. A success
+  passes through untouched and clears the count, so a credential that comes
+  back is used.
+- The bucket is off for the rest of that plugin process, which is one go
+  command, after three failures in a row (`CI_CACHE_GO_CRED_ATTEMPTS`) or
+  after failures have cost ten seconds (`CI_CACHE_GO_CRED_BUDGET`),
+  whichever comes first. One line on stderr gives the count, the time and
+  the last error. From then on the guard refuses without running anything,
+  so each remaining request fails in the time it takes to start a shell.
+
+The same wrapper covers a profile that `AWS_PROFILE` names but no config
+file defines. The SDK refuses to start there, and so does the plugin, and a
+go command whose `GOCACHEPROG` does not start **fails**. The wrapper
+instead runs the plugin against a bucket that is unreachable by
+construction (loopback, one attempt, no uploads), and says so.
+
+What it does not guard: keys in the environment (they cannot be slow), a
+`credential_process` defined only in the credentials file, and a bucket that
+is reachable but slow. `hack/gocacheprog-cases.sh` builds a program from a
+cold cache through the real plugin for each guarded shape. It also runs a
+control without the wrapper, which must not finish, so the cases cannot pass
+by testing nothing.
 
 ## The cache directory
 

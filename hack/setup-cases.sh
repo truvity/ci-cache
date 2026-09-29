@@ -343,6 +343,62 @@ go_case "with pathstyle" "$pathstyle_want" PATH_STYLE=true
 go_case "with goproxy"   "$base GOPROXY" GOPROXY_IN=https://proxy.golang.org,direct
 
 # ---------------------------------------------------------------------------
+# WHICH program GOCACHEPROG names. The wrapper beside the action is what
+# makes a bucket without credentials cost seconds rather than the build (see
+# setup/gocacheprog, and hack/gocacheprog-cases.sh for the builds that prove
+# it). A path the go command cannot carry, or a wrapper that did not arrive
+# executable, must fall back to the plugin itself and say so -- never wire a
+# GOCACHEPROG that cannot start, which fails every go command in the job.
+# ---------------------------------------------------------------------------
+env_value() {
+    # $1 = GITHUB_ENV file, $2 = name. Reads both the NAME=VALUE and the
+    # NAME<<DELIM heredoc forms.
+    awk -v k="$2" '
+        delim != "" { if ($0 == delim) { delim = ""; next } v = $0; next }
+        index($0, k "<<") == 1 { delim = substr($0, length(k) + 3); next }
+        index($0, k "=") == 1 { v = substr($0, length(k) + 2) }
+        END { print v }
+    ' "$1"
+}
+
+prog_case() {
+    local label="$1" action_path="$2" want="$3" warn="$4"
+    checked=$((checked + 1))
+
+    local d; d="$(mktemp -d)"
+    mkdir -p "$d/bin"
+    printf '#!/bin/sh\nexit 0\n' > "$d/bin/go-cache-plugin"; chmod +x "$d/bin/go-cache-plugin"
+    extract "Wire the Go build cache" > "$d/step.sh"
+    : > "$d/env"
+    env -i PATH="$d/bin:/usr/bin:/bin" HOME="$d" GITHUB_ENV="$d/env" \
+        DIR="$d/cache" BUCKET=b REGION=r ENDPOINT= PATH_STYLE= GOPROXY_IN= \
+        DIRKIND=job-local ACTION_PATH="$action_path" \
+        bash "$d/step.sh" > "$d/log" 2>&1
+    local rc=$?
+
+    local got; got="$(env_value "$d/env" GOCACHEPROG)"
+    if [ "$got" != "$want" ]; then
+        echo "FAIL [prog $label]: GOCACHEPROG=\"$got\", want \"$want\""
+        fail=$((fail + 1))
+    fi
+    local warned=no
+    grep -q '::warning::.*fail-open wrapper' "$d/log" && warned=yes
+    if [ "$warned" != "$warn" ]; then
+        echo "FAIL [prog $label]: warned=$warned, want $warn"
+        fail=$((fail + 1))
+    fi
+    if [ "$rc" -ne 0 ]; then
+        echo "FAIL [prog $label]: exited $rc"
+        fail=$((fail + 1))
+    fi
+    cd "$here" || true; rm -rf "$d"
+}
+
+prog_case "the action's own dir"  "$here/setup"        "$here/setup/gocacheprog" no
+prog_case "a path with a space"   "/tmp/with space"    go-cache-plugin           yes
+prog_case "no wrapper there"      "/nonexistent/setup" go-cache-plugin           yes
+
+# ---------------------------------------------------------------------------
 # GOCACHE_EXPIRY on a SHARED directory.
 #
 # This is the one setting that decides whether a node-persistent cache dir

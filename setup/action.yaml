@@ -313,8 +313,28 @@ runs:
           expiry_note=", pruning off (shared dir)"
         fi
 
+        # The plugin is started through gocacheprog, beside this file, so
+        # that a bucket it cannot get credentials for is given up on after a
+        # few seconds rather than asked again on every request for the rest
+        # of the build (see gocacheprog and credential-guard). The go command
+        # splits GOCACHEPROG on spaces, so a path it cannot carry, or a
+        # wrapper that did not arrive executable, falls back to the plugin
+        # itself and says so.
+        prog=go-cache-plugin
+        ACTION_PATH="${ACTION_PATH:-}"
+        case "$ACTION_PATH" in
+          *[!A-Za-z0-9_./-]*)
+            echo "::warning::ci-cache: the action path cannot be carried in GOCACHEPROG; go-cache-plugin runs without its fail-open wrapper" ;;
+          *)
+            if [ -x "$ACTION_PATH/gocacheprog" ] && [ -x "$ACTION_PATH/credential-guard" ]; then
+              prog="$ACTION_PATH/gocacheprog"
+            else
+              echo "::warning::ci-cache: gocacheprog is missing or not executable; go-cache-plugin runs without its fail-open wrapper"
+            fi ;;
+        esac
+
+        write_env GOCACHEPROG "$prog"
         {
-          echo "GOCACHEPROG=go-cache-plugin"
           echo "GOCACHE_METRICS=1"
           echo "GOCACHE_KEY_PREFIX=gocache"
           echo "GOCACHE_EXPIRY=0"
@@ -329,8 +349,9 @@ runs:
         [ -n "$PATH_STYLE" ] && write_env GOCACHE_S3_PATH_STYLE "$PATH_STYLE"
         [ -n "$GOPROXY_IN" ] && write_env GOPROXY "$GOPROXY_IN"
 
-        echo "ci-cache: go -> go-cache-plugin on s3://$BUCKET, cache dir $DIR/gocache${expiry_note}"
+        echo "ci-cache: go -> ${prog##*/} on s3://$BUCKET, cache dir $DIR/gocache${expiry_note}"
       env:
+        ACTION_PATH: ${{ github.action_path }}
         DIR: ${{ steps.detect.outputs.dir }}
         DIRKIND: ${{ steps.detect.outputs.dirkind }}
         BUCKET: ${{ inputs.bucket }}
