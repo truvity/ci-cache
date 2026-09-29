@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
+## v0.3.1
+
+### Fixed
+
+- **`google.golang.org/grpc` bumped to v1.83.2** for GHSA-2v4p-qf9q-27wj (a
+  HIGH-severity DoS in gRPC-Go xDS servers), pulled in indirectly via
+  `connectrpc.com/grpcreflect`.
+
 ## v0.3.0
 
 ### Changed
