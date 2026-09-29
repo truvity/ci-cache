@@ -2,6 +2,7 @@ version: "2"
 
 linters:
   enable:
+    - depguard
     - errcheck
     - gocritic
     - govet
@@ -17,6 +18,43 @@ linters:
   # rejects it, which is why the lint recipe runs verify first. Otherwise a
   # settings block in the wrong place spends releases doing nothing.
   settings:
+    # Copied from truvity/policy lint/golangci-depguard.yaml. A copy
+    # because golangci-lint v2 cannot extend a configuration from a URL;
+    # kept in step by hand, as every consumer's is.
+    depguard:
+      rules:
+        main:
+          deny:
+            # Wiring. docs/decisions/0001-no-di-containers.md — a container turns
+            # a missing dependency into a run-time failure in an environment
+            # where nobody is watching, and takes the shape of the program out of
+            # the program.
+            - pkg: github.com/samber/do
+              desc: "construct dependencies in main and pass them as arguments (policy: contracts/service.md §2)"
+            - pkg: go.uber.org/fx
+              desc: "construct dependencies in main and pass them as arguments (policy: contracts/service.md §2)"
+            - pkg: github.com/google/wire
+              desc: "construct dependencies in main and pass them as arguments (policy: contracts/service.md §2)"
+
+            # Configuration. docs/decisions/0002-config-file-plus-env.md — a
+            # mapping library silently drops what it was not told about, so the
+            # service starts on a default nobody chose.
+            - pkg: github.com/knadh/koanf
+              desc: "one configuration file validated against a schema: github.com/truvity/policy/config"
+            - pkg: github.com/spf13/viper
+              desc: "one configuration file validated against a schema: github.com/truvity/policy/config"
+
+            # Libraries the canon retired. docs/canon/go.md.
+            - pkg: gopkg.in/yaml.v2
+              desc: "go.yaml.in/yaml/v3 — the maintained continuation"
+            - pkg: gopkg.in/yaml.v3
+              desc: "go.yaml.in/yaml/v3 — the archived module's maintained continuation, a drop-in"
+            - pkg: github.com/golang-jwt/jwt
+              desc: "github.com/lestrrat-go/jwx"
+            - pkg: github.com/pkg/errors
+              desc: "stdlib error wrapping with %w"
+            - pkg: github.com/gofiber/fiber/v2
+              desc: "github.com/gofiber/fiber/v3"
     lll:
       line-length: 160
     gocritic:
