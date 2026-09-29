@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# The Go toolchain's GOCACHEPROG as this action wires it: go-cache-plugin,
+# started so that its bucket can never hold a build up.
+#
+# WHY A WRAPPER. go-cache-plugin asks the AWS SDK for credentials on every
+# request to the bucket, and the SDK caches a credential only once it has
+# one. A `credential_process` that FAILS is therefore run again for the next
+# request, and the one after that, for the whole build. Every cache miss
+# waits for it. With a process that takes half a second to be refused (a
+# token exchange is two network round trips), a `go vet` that should take
+# minutes ran at two cache requests a second until it was cancelled, and
+# nothing failed: the plugin counts each refusal as a miss and carries on.
+#
+# Neither side can be told to stop. The SDK has no setting that caches a
+# FAILED credential, and the plugin is upstream's binary, redistributed
+# unmodified (third_party/go-cache-plugin, guarded by
+# hack/vendored-upstream-is-pristine.sh). So this puts a guard IN FRONT of
+# the configured `credential_process`, in a private copy of the AWS config
+# that only this plugin process reads. See credential-guard for the rule.
+#
+# It also covers the other way the bucket can stop a build: a profile that
+# is named but not configured. The SDK refuses to start at all ("failed to
+# get shared config profile"), the plugin exits, and the go command fails
+# with it. That profile is a fact about the runner, not about the code
+# being built, so the build runs from the local cache and says why.
+#
+# Everything here writes to stderr. stdout is the cache protocol.
+set -uo pipefail
+
+plugin="${CI_CACHE_GO_PLUGIN:-go-cache-plugin}"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+say() { printf 'ci-cache: %s\n' "$*" >&2; }
+
+# local_only runs the plugin with its bucket unreachable by construction: a
+# loopback port nothing listens on, one attempt, placeholder keys, and no
+# uploads. Every remote request fails in microseconds, so the build runs at
+# the local cache's speed. The plugin's own metrics still count the misses.
+local_only() {
+    say "$1; the Go build cache is local-only for this go command"
+    shift
+    exec env \
+        -u AWS_PROFILE -u AWS_DEFAULT_PROFILE -u AWS_SESSION_TOKEN \
+        -u AWS_WEB_IDENTITY_TOKEN_FILE -u AWS_ROLE_ARN \
+        -u AWS_CONTAINER_CREDENTIALS_FULL_URI -u AWS_CONTAINER_CREDENTIALS_RELATIVE_URI \
+        AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+        AWS_ACCESS_KEY_ID=local-only AWS_SECRET_ACCESS_KEY=local-only \
+        AWS_EC2_METADATA_DISABLED=true AWS_MAX_ATTEMPTS=1 \
+        GOCACHE_S3_ENDPOINT_URL=http://127.0.0.1:1 GOCACHE_S3_PATH_STYLE=true \
+        GOCACHE_S3_REGION="${GOCACHE_S3_REGION:-us-east-1}" \
+        GOCACHE_MIN_SIZE=9223372036854775807 \
+        "$plugin" "$@"
+}
+
+# Keys in the environment win over every profile, and cannot be slow.
+if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then
+    exec "$plugin" "$@"
+fi
+
+explicit="${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-}}"
+profile="${explicit:-default}"
+config="${AWS_CONFIG_FILE:-$HOME/.aws/config}"
+creds="${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}"
+
+# ini MODE FILE KIND: read or rewrite the profile's section. KIND is
+# `config` (sections `[profile NAME]`, and `[default]` for the default) or
+# `credentials` (sections `[NAME]`). MODE is `has` (exit 0 if the section
+# exists), `get` (print the section's credential_process) or `put` (print
+# the file with that line replaced by $CI_CACHE_GUARD_LINE).
+ini() {
+    [ -r "$2" ] || return 1
+    PROFILE="$profile" KIND="$3" MODE="$1" awk '
+        function header(line,   s) {
+            s = line
+            sub(/^[ \t]*\[[ \t]*/, "", s)
+            sub(/[ \t]*\].*$/, "", s)
+            gsub(/[ \t]+/, " ", s)
+            return s
+        }
+        BEGIN {
+            p = ENVIRON["PROFILE"]; mode = ENVIRON["MODE"]
+            if (ENVIRON["KIND"] == "config") {
+                want1 = "profile " p; want2 = (p == "default") ? "default" : "\001"
+            } else {
+                want1 = p; want2 = "\001"
+            }
+        }
+        /^[ \t]*\[/ {
+            name = header($0); inside = (name == want1 || name == want2)
+            if (inside) found = 1
+        }
+        inside && /^[ \t]*credential_process[ \t]*=/ {
+            v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t\r]+$/, "", v)
+            value = v
+            if (mode == "put") { print ENVIRON["CI_CACHE_GUARD_LINE"]; next }
+        }
+        mode == "put" { print }
+        END {
+            if (mode == "has") exit !found
+            if (mode == "get") { if (value == "") exit 1; print value }
+        }
+    ' "$2"
+}
+
+if [ -n "$explicit" ] && ! ini has "$config" config && ! ini has "$creds" credentials; then
+    local_only "the AWS profile \"$profile\" is in neither $config nor $creds, so the AWS SDK would refuse to start" "$@"
+fi
+
+# Nothing that runs a process, nothing to guard: static keys in a file, or
+# a chain the SDK resolves by itself.
+cmd="$(ini get "$config" config)" || exec "$plugin" "$@"
+[ -n "$cmd" ] || exec "$plugin" "$@"
+
+state="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/ci-cache-go.XXXXXX" 2>/dev/null)" || exec "$plugin" "$@"
+
+# The guard line is run by the SDK through `sh -c`, unquoted, so both paths
+# must be plain words. Base64 carries the original command through
+# byte-for-byte, quotes and pipes included, without a second round of
+# shell parsing.
+case "$here$state" in
+    *[!A-Za-z0-9_./-]*) exec "$plugin" "$@" ;;
+esac
+encoded="$(printf '%s' "$cmd" | base64 | tr -d '\n')"
+export CI_CACHE_GUARD_LINE="credential_process = $here/credential-guard $state $encoded"
+ini put "$config" config > "$state/config" || exec "$plugin" "$@"
+unset CI_CACHE_GUARD_LINE
+
+AWS_CONFIG_FILE="$state/config" exec "$plugin" "$@"

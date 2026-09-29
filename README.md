@@ -81,7 +81,9 @@ repositories that use that workflow never name it.
 ```
 
 With a bucket, the Go build cache goes through `go-cache-plugin` straight to
-it; without one, the job gets the plain toolchain caches and a warning.
+it. If the plugin cannot get credentials for the bucket, it gives up on it
+within seconds and the build carries on locally. Without a bucket, the job
+gets the plain toolchain caches and a warning.
 [docs/setup-action.md](docs/setup-action.md) has every input and what each
 detected build system gets.
 

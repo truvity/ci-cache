@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
+## v0.3.2
+
+### Fixed
+
+- **The Go build cache fails open when it cannot get credentials.** Before
+  this, a `credential_process` that failed was run again for every request
+  to the bucket, because the AWS SDK caches only a credential it has. A
+  process refused in half a second held a large `go vet` at about two cache
+  requests a second, until the job timed out, and nothing failed. The setup
+  action now sets `GOCACHEPROG` to `setup/gocacheprog`, which starts the
+  same unmodified `go-cache-plugin` behind `setup/credential-guard`. After
+  three failures in a row, or ten seconds of them, the bucket is off for
+  the rest of that go command. One line says why, and the build carries on
+  with its local cache. `CI_CACHE_GO_CRED_ATTEMPTS` and
+  `CI_CACHE_GO_CRED_BUDGET` tune the bounds. See
+  [the setup action](docs/setup-action.md#a-bucket-without-credentials).
+- **A named but undefined AWS profile no longer fails the build.** The SDK
+  refuses to load it, so the plugin never started and every go command
+  failed with it. The wrapper now runs that go command local-only and says
+  so.
+
 ## v0.3.1
 
 ### Fixed
