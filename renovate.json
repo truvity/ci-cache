@@ -49,11 +49,5 @@
       "enabled": false
     }
   ],
-  "vulnerabilityAlerts": {
-    "labels": [
-      "security"
-    ],
-    "automerge": true
-  },
   "constraintsFiltering": "strict"
 }
