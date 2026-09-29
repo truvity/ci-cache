@@ -3,6 +3,7 @@
   "extends": [
     "github>truvity/ci-workflows"
   ],
+  "description": "Overrides beyond the shared preset: automerge, lockfile maintenance, the devbox ignorePaths and vulnerability-alert defaults common to every repository built from this component template. Individual packageRules document their own exceptions.",
   "osvVulnerabilityAlerts": true,
   "automerge": true,
   "automergeType": "pr",
