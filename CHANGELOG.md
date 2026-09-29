@@ -5,6 +5,56 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
+## [0.2.0] - 2026-09-29
+
+### Added
+
+- **A setup action, `truvity/ci-cache/setup`.** It looks at a repository,
+  works out which build systems it uses (`go.mod`, `devbox.json` or
+  `flake.nix`, `yarn.lock` or `package-lock.json`, `.moon/`,
+  `build.gradle`/`build.gradle.kts`), and wires each to this estate's cache
+  -- today that means the Go build cache going straight to the bucket
+  through `go-cache-plugin`, no server, because that is what measurement
+  chose. It is nested: only `truvity/ci-actions`'s `setup-devbox` calls it,
+  so a repository keeps one pin and never names this action directly.
+
+  Failing open is the design: a runner that cannot reach a backend gets the
+  plain toolchain caches and a warning, never a failed job. Verifying a
+  fetched client binary's checksum is the one exception -- a corrupted or
+  tampered download is worse than a slow build, not merely slower than one.
+
+- **`client-version` fetches something now.** The input has existed since
+  the setup action's first commit and did nothing: no fetch step existed,
+  and `.goreleaser.yaml` built only the `ci-cache` binary, so there was no
+  client artifact to take even with the wiring in place. This release adds
+  a second build/archive pair -- upstream `tailscale/go-cache-plugin`
+  (BSD-3-Clause, pinned to v0.1.1, redistributed unmodified) -- published as
+  `go-cache-plugin_<version>_<os>_<arch>.tar.gz` alongside `ci-cache`
+  itself and named after THIS repository's version, not upstream's, so one
+  number pins the chart, the action and the binary together. A job can now
+  pin a plugin build to this repository's own release instead of waiting on
+  a `ci-plane` image rebuild. The fetch verifies the download against
+  `checksums.txt` and refuses to run a binary that does not match.
+
+- **The vendored copy is guarded against drifting from its pin.**
+  `hack/vendored-upstream-is-pristine.sh` (`just vendored`) compares the
+  vendored `cmd/go-cache-plugin` tree against what the pinned upstream
+  version actually published, using `go.sum` as the trust anchor rather
+  than a fetch. A pin that moves without the copy, or a copy that was
+  hand-edited, now fails instead of shipping quietly -- both would make
+  "redistributes an unmodified upstream binary" a false statement.
+
+### Fixed
+
+- **A shared, node-persistent cache directory could lose an object
+  mid-build.** `go-cache-plugin` prunes by calling
+  `cachedir.Cleanup(expiry)`, which installs no pruner at all for
+  `expiry <= 0` -- already the default, but a safety property that holds
+  only while nobody sets a variable is not a safety property. The setup
+  action now pins `GOCACHE_EXPIRY=0` on every job and warns when a shared
+  directory had been set to something else; a job-local directory, where
+  nothing is at risk, stays silent.
+
 ## [0.1.4] - 2026-09-24
 
 ### Fixed
