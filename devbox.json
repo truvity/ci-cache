@@ -1,19 +1,19 @@
 {
   "packages": {
-    "buf":           "latest",
+    "buf":           "1.72.0",
     "go":            "1.27.0",
     "golangci-lint": "2.13.1",
-    "goreleaser":    "latest",
-    "gopls":         "latest",
+    "goreleaser":    "2.17.1",
+    "gopls":         "0.23.0",
 
     "govulncheck":           "1.7.0",
-    "just-lsp":              "latest",
-    "just":                  "latest",
-    "ko":                    "latest",
-    "kubernetes-helm":       "latest",
-    "lefthook":              "latest",
-    "protoc-gen-connect-go": "latest",
-    "protoc-gen-go":         "latest",
+    "just-lsp":              "0.6.2",
+    "just":                  "1.58.0",
+    "ko":                    "0.19.1",
+    "kubernetes-helm":       "4.2.4",
+    "lefthook":              "2.1.10",
+    "protoc-gen-connect-go": "1.20.0",
+    "protoc-gen-go":         "1.36.12",
     "yq-go":                 "4.53.3"
   },
   "env": {
