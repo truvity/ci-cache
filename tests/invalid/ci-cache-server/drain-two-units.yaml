@@ -1,0 +1,9 @@
+# refuses: drainTimeout
+# A duration in two units. The binary accepts it, but the chart derives the
+# pod's grace period from it and reads only one unit, so the kill would land
+# before the drain finished.
+store:
+  bucket: ci-cache-example
+  region: eu-example-1
+server:
+  drainTimeout: 1m30s

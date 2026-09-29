@@ -1,0 +1,470 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ci-cache-server chart values",
+  "description": "Strict wherever the chart owns the shape: an unknown key is refused, so a typo fails the render instead of being ignored. The Kubernetes passthrough fields (resources, affinity, tolerations) stay open. The rules that need more than one value to state -- a bucket and a region, two different ports, one identity -- are the chart's own refusals in templates/_checks.tpl, which say why.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "global": {
+      "type": "object",
+      "description": "Accepted so that the chart can be a dependency; nothing reads it."
+    },
+    "image": {
+      "type": "object",
+      "description": "The server image.",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The server image. Released as ghcr.io/truvity/ci-cache/server."
+        },
+        "tag": {
+          "type": "string",
+          "description": "Empty takes the chart's appVersion, which the release stamps from the tag."
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "store": {
+      "type": "object",
+      "description": "The S3-compatible bucket behind the disk tier.",
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "type": "string",
+          "description": "The bucket behind the disk tier. Required: the chart refuses to render without one."
+        },
+        "region": {
+          "type": "string",
+          "description": "The bucket's region; required, always. Cloudflare R2 takes \"auto\"."
+        },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^$|^https?://",
+          "description": "Empty keeps AWS. An absolute URL with a scheme for any other S3-compatible store."
+        },
+        "pathStyle": {
+          "type": "boolean",
+          "description": "Address the bucket as endpoint/bucket/key. On for Cloudflare R2."
+        },
+        "keyPrefix": {
+          "type": "string",
+          "description": "In front of every key, for a bucket that already holds something else."
+        },
+        "existingSecret": {
+          "type": "string",
+          "description": "A Secret carrying AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, for a store with no pod identity. Refused together with serviceAccount.annotations."
+        }
+      }
+    },
+    "frontends": {
+      "type": "object",
+      "description": "Which protocols this installation serves. Only the two Go front-ends are built.",
+      "additionalProperties": false,
+      "properties": {
+        "go": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "build": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "The Go build cache over GOCACHEPROG."
+                },
+                "legacyPrefix": {
+                  "type": "string",
+                  "description": "Consulted on a bucket miss only, for a bucket warmed by go-cache-plugin."
+                }
+              }
+            },
+            "mod": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "The Go module proxy and checksum database mirror."
+                },
+                "upstream": {
+                  "type": "string",
+                  "description": "The module proxy to fill from."
+                },
+                "sumdb": {
+                  "type": "string",
+                  "description": "The checksum database the mirror verifies against."
+                },
+                "listTTL": {
+                  "type": "string",
+                  "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+                  "description": "Lifetime of @v/list and @latest answers, as a Go duration."
+                },
+                "legacyPrefix": {
+                  "type": "string",
+                  "description": "Consulted on a bucket miss only."
+                }
+              }
+            }
+          }
+        },
+        "maven": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Not built yet: see docs/clients/maven.md."
+            },
+            "upstreams": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "name -> base URL; each becomes /maven/<name>."
+            },
+            "metadataTTL": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "description": "Lifetime of maven-metadata.xml."
+            },
+            "negativeTTL": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "description": "How long a 404 is remembered."
+            }
+          }
+        },
+        "gradle": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "build": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Not built yet: see docs/clients/gradle.md."
+                },
+                "readOnly": {
+                  "type": "boolean",
+                  "description": "Refuse PUT."
+                },
+                "maxEntry": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "An entry larger than this many bytes is refused."
+                }
+              }
+            },
+            "dist": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Not built yet: see docs/clients/gradle.md."
+                },
+                "allow": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "The upstream prefixes the distribution proxy may fetch."
+                }
+              }
+            }
+          }
+        },
+        "nix": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Not built yet: see docs/clients/nix.md."
+            },
+            "upstreams": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "What nix-cache-info advertises; lower wins."
+            },
+            "negativeTTL": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "description": "How long a miss is remembered."
+            }
+          }
+        },
+        "npm": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Not built yet: see docs/clients/npm.md."
+            },
+            "upstream": {
+              "type": "string"
+            },
+            "metadataTTL": {
+              "type": "string",
+              "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "description": "Lifetime of a packument."
+            }
+          }
+        },
+        "bazel": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Not built yet: see docs/clients/bazel.md."
+            }
+          }
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "description": "The disk tier's volume.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Off gives an emptyDir, which the chart refuses while a build cache is on."
+        },
+        "size": {
+          "type": [
+            "string",
+            "integer"
+          ],
+          "description": "The working set, as a Kubernetes quantity."
+        },
+        "storageClass": {
+          "type": "string"
+        },
+        "existingClaim": {
+          "type": "string",
+          "description": "A claim made elsewhere; set it and the chart creates none."
+        },
+        "dir": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Where the disk tier lives in the container."
+        },
+        "ephemeralIsAcceptable": {
+          "type": "boolean",
+          "description": "Says a volume that empties on restart is intended."
+        }
+      }
+    },
+    "gc": {
+      "type": "object",
+      "description": "How the disk tier is kept inside its volume.",
+      "additionalProperties": false,
+      "properties": {
+        "floor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 90,
+          "description": "Percent of the filesystem left free."
+        },
+        "high": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Percent of the budget at which eviction starts."
+        },
+        "low": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99,
+          "description": "Percent of the budget at which eviction stops; below high."
+        },
+        "budgetBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Overrides the budget derived from statfs; 0 derives it."
+        },
+        "budgets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "description": "Per-front-end caps, as a percentage of the whole."
+        }
+      }
+    },
+    "upload": {
+      "type": "object",
+      "description": "The write-behind queue in front of the bucket.",
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "queue": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Objects that may wait for the bucket."
+        },
+        "queueBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Bytes that may wait for the bucket."
+        },
+        "minSize": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Objects below this many bytes skip the bucket; 0 uploads everything."
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "description": "The two listeners.",
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Every front-end. Must differ from admin."
+        },
+        "admin": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Stats, List, the wipes and the UI. Never in a consumer's policy."
+        }
+      }
+    },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "In-flight requests."
+        },
+        "drainTimeout": {
+          "type": "string",
+          "pattern": "^[0-9]+(ms|s|m|h)$",
+          "description": "How long the server keeps serving after SIGTERM, in ONE unit (ms, s, m or h): the chart derives the pod's grace period from it."
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "description": "Who may reach the data port.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "consumerNamespaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "The namespaces whose pods may reach the data port. Empty admits nobody."
+        }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Pod identity goes here. Refused together with store.existingSecret."
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "otlpEndpoint": {
+          "type": "string",
+          "description": "Empty sends nothing."
+        },
+        "traceRatio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "logLevel": {
+      "enum": [
+        "debug",
+        "info",
+        "warn",
+        "error",
+        "DEBUG",
+        "INFO",
+        "WARN",
+        "ERROR"
+      ]
+    },
+    "resources": {
+      "type": "object"
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "affinity": {
+      "type": "object"
+    },
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "priorityClassName": {
+      "type": "string"
+    }
+  }
+}

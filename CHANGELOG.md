@@ -5,7 +5,45 @@ All notable changes to this project are documented here. The format follows
 the state of the repository at that version, not the history of edits that got
 there.
 
-## [0.2.0] - 2026-09-29
+## Unreleased
+
+### Changed
+
+- **The chart is `ci-cache-server` now, and the image is
+  `ghcr.io/truvity/ci-cache/server`.** Up to v0.2.0 the chart was published
+  as `oci://ghcr.io/truvity/charts/ci-cache` and the image as
+  `ghcr.io/truvity/ci-cache/ci-cache`. The chart had to move: that registry
+  path already carries a different, retired chart's 1.x line, so every 0.x
+  release of this one sorted below it: a lookup for the newest version, or a
+  range, found the other chart. The image name repeated the repository's.
+
+  To migrate, change the chart reference and nothing else:
+
+  | | up to v0.2.0 | from the next release |
+  |---|---|---|
+  | chart | `oci://ghcr.io/truvity/charts/ci-cache` | `oci://ghcr.io/truvity/charts/ci-cache-server` |
+  | image | `ghcr.io/truvity/ci-cache/ci-cache` | `ghcr.io/truvity/ci-cache/server` |
+
+  Values are unchanged. The objects the chart renders keep the name
+  `ci-cache` -- the Services, the selector labels, the ServiceAccount and the
+  PersistentVolumeClaim -- so an existing release upgrades in place and keeps
+  its warm disk. Only the `helm.sh/chart` label changes. An installation that
+  pins `image.repository` explicitly must change it to the new name.
+
+- **`Chart.yaml` commits `version: 0.0.0` and `appVersion: 0.0.0`.** The
+  release stamps both from the tag, as it always did; the committed `0.1.0`
+  was a placeholder that looked like a version.
+
+### Added
+
+- **`values.schema.json`.** An unknown key, a value of the wrong type, or a
+  `server.drainTimeout` in more than one unit is refused at render time
+  instead of being ignored. The fixtures under `tests/invalid/` prove each
+  one.
+
+## v0.2.0
+
+Released 2026-09-29.
 
 ### Added
 
@@ -55,7 +93,9 @@ there.
   directory had been set to something else; a job-local directory, where
   nothing is at risk, stays silent.
 
-## [0.1.4] - 2026-09-24
+## v0.1.4
+
+Released 2026-09-24.
 
 ### Fixed
 
@@ -95,7 +135,9 @@ there.
   which tier is being written to, and does anything read it back -- and two
   rounds of this work were spent inferring that from wall-clock alone.
 
-## [0.1.3] - 2026-09-24
+## v0.1.3
+
+Released 2026-09-24.
 
 ### Fixed
 
@@ -144,7 +186,9 @@ there.
   the admin port has no ingress allowance from any pod, so nothing in the
   cluster can put the server into a cold-disk state.
 
-## [0.1.2] - 2026-09-23
+## v0.1.2
+
+Released 2026-09-23.
 
 ### Fixed
 
@@ -159,7 +203,9 @@ there.
   quarter of it, and the start-up log says which source was used. `statfs` is
   still right where the cache owns its volume, which is what the server does.
 
-## [0.1.1] - 2026-09-23
+## v0.1.1
+
+Released 2026-09-23.
 
 ### Fixed
 
@@ -174,7 +220,9 @@ there.
   thing the rendered container must DO, which is the check that would have
   caught this before a cluster did.
 
-## [0.1.0] - 2026-09-23
+## v0.1.0
+
+Released 2026-09-23.
 
 The first release: the engine, the two Go front-ends, the runner agent, the
 admin API and the chart.

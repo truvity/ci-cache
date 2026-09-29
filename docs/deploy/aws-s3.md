@@ -8,9 +8,10 @@ Everything particular — the bucket, the account, the namespace, the consumer
 list — is an input with a neutral default. Nothing in this repository names an
 estate, and `just leak-canary` is what keeps it that way.
 
-The example this page describes is `charts/ci-cache/examples/aws-s3.yaml`, and
-`just chart` renders it on every run: a documented example that no longer
-templates is a red mark rather than somebody's afternoon.
+The example this page describes is
+`charts/ci-cache-server/examples/aws-s3.yaml`, and `just chart` renders it on
+every run: a documented example that no longer templates is a red mark rather
+than somebody's afternoon.
 
 ## What to prepare
 
@@ -105,6 +106,18 @@ networkPolicy:
     - <namespace>
 ```
 
+Installed from the chart registry, at a pinned version:
+
+```sh
+helm upgrade --install ci-cache oci://ghcr.io/truvity/charts/ci-cache-server \
+  --version <version> -n <namespace> -f values.yaml
+```
+
+The chart is `ci-cache-server` from the first release after v0.2.0; v0.2.0
+and earlier were published as `oci://ghcr.io/truvity/charts/ci-cache`, and the
+[CHANGELOG](../../CHANGELOG.md) says how to move. Name the release `ci-cache`
+and the Services are `ci-cache` and `ci-cache-admin`.
+
 ### Every value
 
 | value | what it decides |
@@ -161,6 +174,10 @@ one rule is not duplication.
   ServiceAccount.
 - `frontends.maven.enabled` with no upstreams; `frontends.gradle.dist.enabled`
   with an empty allow list; `frontends.nix.enabled` with no upstreams.
+- Through `values.schema.json`: a key the chart does not have (a typo is an
+  error, not a silently ignored setting), a value of the wrong type, and a
+  `server.drainTimeout` in more than one unit, since the pod's grace period is
+  derived from it.
 
 ## Sizing
 

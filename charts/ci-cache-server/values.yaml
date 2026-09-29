@@ -9,9 +9,10 @@
 # is how Kubernetes is told to run it.
 
 image:
-  # ko builds one image per command and appends the command's import-path base
-  # to KO_DOCKER_REPO, so ./cmd/ci-cache publishes under .../ci-cache/ci-cache.
-  repository: ghcr.io/truvity/ci-cache/ci-cache
+  # The server's image. The release names it exactly this (ko `bare: true`,
+  # KO_DOCKER_REPO set to this value in .github/workflows/release.yaml); it
+  # was ghcr.io/truvity/ci-cache/ci-cache up to v0.2.0.
+  repository: ghcr.io/truvity/ci-cache/server
   tag: ""        # empty takes the chart's appVersion
   pullPolicy: IfNotPresent
 

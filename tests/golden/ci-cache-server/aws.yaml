@@ -1,5 +1,5 @@
 ---
-# Source: ci-cache/templates/networkpolicy.yaml
+# Source: ci-cache-server/templates/networkpolicy.yaml
 # Who may reach the cache, and on which port.
 #
 # The DATA port only. The admin port carries the wipes, and it appears in no
@@ -22,10 +22,10 @@ kind: NetworkPolicy
 metadata:
   name: ci-cache
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   podSelector:
@@ -40,17 +40,12 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: "ci"
-        # kubernetes.io/metadata.name is set by the kubelet on every
-        # Namespace, so it needs no label anyone has to remember to apply.
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: "build"
       ports:
         - protocol: TCP
           port: 8080
 
 ---
-# Source: ci-cache/templates/serviceaccount.yaml
+# Source: ci-cache-server/templates/serviceaccount.yaml
 # The identity that reads and writes the bucket, and nothing else. On a store
 # with pod identity this is where the binding goes; with static keys it stays
 # bare and `store.existingSecret` carries them. Both at once is refused.
@@ -59,14 +54,16 @@ kind: ServiceAccount
 metadata:
   name: ci-cache
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>
 
 ---
-# Source: ci-cache/templates/pvc.yaml
+# Source: ci-cache-server/templates/pvc.yaml
 # The disk tier. ReadWriteOnce on purpose: the tier is a local filesystem with
 # a local index, and two pods writing one directory would each keep an index of
 # what the other was evicting. The Deployment's Recreate strategy is the other
@@ -79,10 +76,10 @@ kind: PersistentVolumeClaim
 metadata:
   name: ci-cache-data
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   accessModes: [ReadWriteOnce]
@@ -91,7 +88,7 @@ spec:
       storage: 50Gi
 
 ---
-# Source: ci-cache/templates/service.yaml
+# Source: ci-cache-server/templates/service.yaml
 # TWO Services, not one Service with two ports.
 #
 # A consumer is given a name, and the name it is given must not be able to
@@ -105,10 +102,10 @@ kind: Service
 metadata:
   name: ci-cache
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   type: ClusterIP
@@ -122,7 +119,7 @@ spec:
       protocol: TCP
 
 ---
-# Source: ci-cache/templates/service.yaml
+# Source: ci-cache-server/templates/service.yaml
 # Stats, List, the wipes and the UI. Nothing a build runs should ever be told
 # this name.
 apiVersion: v1
@@ -130,10 +127,10 @@ kind: Service
 metadata:
   name: ci-cache-admin
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: admin
 spec:
@@ -148,7 +145,7 @@ spec:
       protocol: TCP
 
 ---
-# Source: ci-cache/templates/deployment.yaml
+# Source: ci-cache-server/templates/deployment.yaml
 # One process, one volume, one replica.
 #
 # A second replica would not be a second cache but half a cache twice: the
@@ -161,10 +158,10 @@ kind: Deployment
 metadata:
   name: ci-cache
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -203,7 +200,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ci-cache
-          image: ghcr.io/truvity/ci-cache/ci-cache:0.1.0
+          image: ghcr.io/truvity/ci-cache/server:0.0.0
           imagePullPolicy: IfNotPresent
           # The subcommand, and it is NOT optional. ko's entrypoint is the
           # bare binary, and the bare binary is a CLI with several
@@ -217,11 +214,9 @@ spec:
             - name: CI_CACHE_STORE_BUCKET
               value: "ci-cache-example"
             - name: CI_CACHE_STORE_REGION
-              value: "auto"
-            - name: CI_CACHE_STORE_ENDPOINT
-              value: "https://<account>.r2.cloudflarestorage.com"
+              value: "eu-example-1"
             - name: CI_CACHE_STORE_PATH_STYLE
-              value: "true"
+              value: "false"
             - name: CI_CACHE_FRONTENDS_GO_BUILD_ENABLED
               value: "true"
             - name: CI_CACHE_FRONTENDS_GO_MOD_ENABLED
@@ -296,12 +291,6 @@ spec:
               value: "0.01"
             - name: CI_CACHE_LOG_LEVEL
               value: "info"
-          # envFrom rather than named variables, so that a session token is
-          # carried too without this chart having to name every variable the
-          # SDK may read.
-          envFrom:
-            - secretRef:
-                name: ci-cache-r2
           ports:
             - name: data
               containerPort: 8080

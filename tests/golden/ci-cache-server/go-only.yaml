@@ -1,51 +1,5 @@
 ---
-# Source: ci-cache/templates/networkpolicy.yaml
-# Who may reach the cache, and on which port.
-#
-# The DATA port only. The admin port carries the wipes, and it appears in no
-# rule here at all -- not as a second entry, not beside the data port in a
-# shared `ports:` list. A consumer that cannot name it cannot reach it by
-# guessing, and nobody can widen this policy by copying a line.
-#
-# An EMPTY `consumerNamespaces` renders a policy with NO ingress rules, which
-# selects these pods and admits nobody. That is the safe reading and it is
-# written out below rather than left to fall out of a range, because the
-# classic bug is the inversion: a rule whose `from` list came out empty is not
-# "nobody", it is EVERY pod in the cluster, and it looks identical in a diff.
-#
-# Egress is left alone. `policyTypes` names Ingress only, so the cache can
-# still reach its bucket, its upstreams and its OTLP collector; a policy that
-# listed Egress and forgot one of those would fail as a cache that answers
-# every request with a miss.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ci-cache
-  labels:
-    helm.sh/chart: ci-cache-0.1.0
-    app.kubernetes.io/name: ci-cache
-    app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: Helm
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: ci-cache
-      app.kubernetes.io/instance: ci-cache
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        # kubernetes.io/metadata.name is set by the kubelet on every
-        # Namespace, so it needs no label anyone has to remember to apply.
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: "ci"
-      ports:
-        - protocol: TCP
-          port: 8080
-
----
-# Source: ci-cache/templates/serviceaccount.yaml
+# Source: ci-cache-server/templates/serviceaccount.yaml
 # The identity that reads and writes the bucket, and nothing else. On a store
 # with pod identity this is where the binding goes; with static keys it stays
 # bare and `store.existingSecret` carries them. Both at once is refused.
@@ -54,16 +8,14 @@ kind: ServiceAccount
 metadata:
   name: ci-cache
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::<account>:role/<role>
 
 ---
-# Source: ci-cache/templates/pvc.yaml
+# Source: ci-cache-server/templates/pvc.yaml
 # The disk tier. ReadWriteOnce on purpose: the tier is a local filesystem with
 # a local index, and two pods writing one directory would each keep an index of
 # what the other was evicting. The Deployment's Recreate strategy is the other
@@ -76,19 +28,19 @@ kind: PersistentVolumeClaim
 metadata:
   name: ci-cache-data
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   accessModes: [ReadWriteOnce]
   resources:
     requests:
-      storage: 50Gi
+      storage: 20Gi
 
 ---
-# Source: ci-cache/templates/service.yaml
+# Source: ci-cache-server/templates/service.yaml
 # TWO Services, not one Service with two ports.
 #
 # A consumer is given a name, and the name it is given must not be able to
@@ -102,10 +54,10 @@ kind: Service
 metadata:
   name: ci-cache
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   type: ClusterIP
@@ -119,7 +71,7 @@ spec:
       protocol: TCP
 
 ---
-# Source: ci-cache/templates/service.yaml
+# Source: ci-cache-server/templates/service.yaml
 # Stats, List, the wipes and the UI. Nothing a build runs should ever be told
 # this name.
 apiVersion: v1
@@ -127,10 +79,10 @@ kind: Service
 metadata:
   name: ci-cache-admin
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: admin
 spec:
@@ -145,7 +97,7 @@ spec:
       protocol: TCP
 
 ---
-# Source: ci-cache/templates/deployment.yaml
+# Source: ci-cache-server/templates/deployment.yaml
 # One process, one volume, one replica.
 #
 # A second replica would not be a second cache but half a cache twice: the
@@ -158,10 +110,10 @@ kind: Deployment
 metadata:
   name: ci-cache
   labels:
-    helm.sh/chart: ci-cache-0.1.0
+    helm.sh/chart: ci-cache-server-0.0.0
     app.kubernetes.io/name: ci-cache
     app.kubernetes.io/instance: ci-cache
-    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -200,7 +152,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ci-cache
-          image: ghcr.io/truvity/ci-cache/ci-cache:0.1.0
+          image: ghcr.io/truvity/ci-cache/server:0.0.0
           imagePullPolicy: IfNotPresent
           # The subcommand, and it is NOT optional. ko's entrypoint is the
           # bare binary, and the bare binary is a CLI with several
@@ -214,7 +166,7 @@ spec:
             - name: CI_CACHE_STORE_BUCKET
               value: "ci-cache-example"
             - name: CI_CACHE_STORE_REGION
-              value: "eu-west-1"
+              value: "eu-example-1"
             - name: CI_CACHE_STORE_PATH_STYLE
               value: "false"
             - name: CI_CACHE_FRONTENDS_GO_BUILD_ENABLED

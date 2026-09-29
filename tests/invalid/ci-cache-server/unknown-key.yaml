@@ -1,0 +1,9 @@
+# refuses: persistance
+# A typo at the top level. Without a schema helm ignores the key, the volume
+# keeps its default size, and nobody learns that the value they set was never
+# read.
+store:
+  bucket: ci-cache-example
+  region: eu-example-1
+persistance:
+  size: 500Gi

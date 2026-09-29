@@ -1,9 +1,17 @@
+{{/*
+The component's name, and NOT the chart's. The chart is packaged as
+`ci-cache-server` because the registry path `charts/ci-cache` was taken; the
+objects it renders keep the name `ci-cache`, so that an installation moving
+from the old package to this one keeps its Service name, its selector labels
+and -- above all -- its PersistentVolumeClaim, and with it a warm disk. A
+selector is immutable, and a claim that changed name is a cold cache.
+*/}}
 {{- define "ci-cache.name" -}}
-{{- .Chart.Name | trunc 63 | trimSuffix "-" -}}
+ci-cache
 {{- end -}}
 
 {{- define "ci-cache.fullname" -}}
-{{- $name := .Chart.Name -}}
+{{- $name := include "ci-cache.name" . -}}
 {{- if contains $name .Release.Name -}}
 {{- .Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- else -}}

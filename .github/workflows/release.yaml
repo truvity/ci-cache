@@ -2,7 +2,7 @@
 # goreleaser builds the server as archives, so that a laptop or a runner can
 # hold the same binary the cluster does, and, through ko, the one image the
 # chart deploys. The chart itself is packaged at the tag's version and pushed
-# to oci://ghcr.io/truvity/charts/ci-cache.
+# to oci://ghcr.io/truvity/charts/ci-cache-server.
 #
 # The caller grants the permissions because a reusable workflow can
 # narrow them but never widen them.
@@ -28,16 +28,19 @@ jobs:
     permissions:
       contents: write
       packages: write
-    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@d2ee68415ccb1523a21504598dcce0e0c1e39c68 # v3.12.1
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
-      charts: '["ci-cache"]'
+      # `ci-cache-server`, not `ci-cache`: that registry path already holds
+      # another chart's 1.x line, which a 0.x release would sort below.
+      charts: '["ci-cache-server"]'
       # The server as a Nix flake, one release asset, so that a runner image
       # or another repository's devbox can pin this binary by hash. The tiers
       # are one program: the cache a developer runs over a bucket is the same
       # binary the cluster runs, and a pin is how it stays the same one.
       nix-flakes: '["ci-cache"]'
-      # ko appends the command's import-path base to this, so ./cmd/ci-cache
-      # publishes ghcr.io/truvity/ci-cache/ci-cache — which is what the
-      # chart's `image.repository` names. This value, and NOT the
-      # `repositories:` list in .goreleaser.yaml, is what ko obeys.
-      ko-docker-repo: ghcr.io/truvity/ci-cache
+      # The image's full name: .goreleaser.yaml builds it `bare`, so ko
+      # appends nothing. It is what the chart's `image.repository` names, and
+      # this value, NOT the `repositories:` list in .goreleaser.yaml, is what
+      # ko obeys. An image name never repeats the repository's: it was
+      # ci-cache/ci-cache up to v0.2.0.
+      ko-docker-repo: ghcr.io/truvity/ci-cache/server
