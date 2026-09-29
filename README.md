@@ -106,7 +106,7 @@ GOCACHEPROG=ci-cache agent --remote http://ci-cache:8080/go/build
 
 The `|` matters: it falls through on *any* error, so an unreachable cache is a
 slower build and not a failed one. [clients/go](docs/clients/go.md) is the
-rest of the Go wiring, including what `ci-workflows` already sets.
+rest of the Go wiring, including what `ci-actions` already sets.
 
 ## Two ports
 

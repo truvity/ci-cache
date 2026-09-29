@@ -33,7 +33,7 @@ paths onto it, and without it the first request is for `…/npm<package>`.
 
 There is none inside the client. npm and Yarn have one registry, and if it
 does not answer, `npm install` fails. That is why the estate's jobs **probe
-before they override**: `ci-workflows` curls the cache's ping endpoint with a
+before they override**: `ci-actions` curls the cache's ping endpoint with a
 short timeout and only then writes the registry variables, so a cache that is
 down means a job that installs from the public registry rather than a job that
 fails.

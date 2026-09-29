@@ -164,16 +164,16 @@ so `GOSUMDB` verification keeps working when a runner has no route to the
 internet. Keep `GOFLAGS`, `GONOSUMDB` and `GOPRIVATE` exactly as they are:
 private modules must still bypass the proxy and the sumdb, and pointing
 `GOPROXY` at this cache changes nothing about that
-([the private-module wiring lives in `ci-workflows`](#what-ci-workflows-sets)).
+([the private-module wiring lives in `ci-actions`](#what-ci-actions-sets)).
 
 `frontends.go.mod.listTTL` is how long a `@v/list` and `@latest` answer is
 reused. Those are the only module-proxy responses that are allowed to change
 for an unchanged input, so they are the only ones with a TTL; a `@v/<version>.zip`
 is immutable and is cached until it is evicted.
 
-## What `ci-workflows` sets
+## What `ci-actions` sets
 
-The estate's jobs are wired by `truvity/ci-workflows`, in the `setup-devbox`
+The estate's jobs are wired by `truvity/ci-actions`, in the `setup-devbox`
 action, and the wiring is already in the shape this service needs:
 
 | input | what the action writes |

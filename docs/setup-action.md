@@ -10,7 +10,7 @@ client tools so that the three cannot disagree.
 Only the shared CI workflow calls it:
 
 ```yaml
-# ci-workflows/.github/actions/setup-devbox/action.yaml
+# ci-actions/setup-devbox/action.yaml
 - uses: truvity/ci-cache/setup@<sha>   # vX.Y.Z
   with:
     bucket: ${{ inputs.cache-bucket }}
