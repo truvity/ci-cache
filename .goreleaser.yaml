@@ -111,21 +111,23 @@ kos:
     #
     # A per-ko `repositories:` list does NOT override KO_DOCKER_REPO. The
     # shared release workflow exports that variable (`ko-docker-repo:
-    # ghcr.io/truvity/ci-cache`), and whatever is written here is silently
-    # ignored at release time: audit's v0.1.0 set a list, ko pushed to the
-    # env's value anyway, and the registry answered a 400 that named neither.
-    # So this list exists to make the check pass offline, and it has to be
-    # kept equal to what release.yaml sets -- it is not the way to change the
-    # destination.
-    repositories: [ghcr.io/truvity/ci-cache]
+    # ghcr.io/truvity/ci-cache/server`), and whatever is written here is
+    # silently ignored at release time: audit's v0.1.0 set a list, ko pushed
+    # to the env's value anyway, and the registry answered a 400 that named
+    # neither. So this list exists to make the check pass offline, and it has
+    # to be kept equal to what release.yaml sets -- it is not the way to
+    # change the destination.
+    repositories: [ghcr.io/truvity/ci-cache/server]
+    # The repository IS the image name: ko appends nothing. ko's namer
+    # consults base_import_paths BEFORE bare, so the two cannot both be on --
+    # with base_import_paths true (as up to v0.2.0) ./cmd/ci-cache published
+    # ghcr.io/truvity/ci-cache/ci-cache, a name that repeats the repository.
+    # charts/ci-cache-server/values.yaml has this same name as
+    # `image.repository`; a mismatch is a chart pointing at a tag that was
+    # never pushed.
     bare: true
     preserve_import_paths: false
-    # ko names the image by appending the command's import-path base to the
-    # repository, so ./cmd/ci-cache publishes ghcr.io/truvity/ci-cache/ci-cache
-    # -- which is what charts/ci-cache/values.yaml has as `image.repository`.
-    # Without this the bare repository would be the image name, and the chart
-    # would point at a tag that was never pushed.
-    base_import_paths: true
+    base_import_paths: false
     base_image: cgr.dev/chainguard/static:latest
     platforms: [linux/amd64, linux/arm64]
     tags: ["{{ .Version }}", latest]

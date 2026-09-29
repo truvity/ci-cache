@@ -84,9 +84,10 @@ fi
 # than saying anything about this cache.
 skip_sections="image resources nodeSelector tolerations affinity podAnnotations priorityClassName fullnameOverride nameOverride"
 
-values="charts/ci-cache/values.yaml"
+values="charts/ci-cache-server/values.yaml"
 if [ ! -f "$values" ]; then
-  note "chart values: skipped: chart not present ($values)"
+  # A moved chart must not turn this check into a skip that reads as a pass.
+  bad "chart values: $values is missing -- the chart moved, and this check would have scanned nothing"
 else
   # Leaf keys, as dotted paths. A key with a scalar, an empty map or an empty
   # list is a leaf; so is one whose only children are list items, since a list

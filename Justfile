@@ -63,24 +63,42 @@ lint:
 # manifest is a diff a reviewer reads rather than a surprise in a cluster. The
 # refusals matter more: each is a configuration the binary rejects at start-up,
 # or accepts and then gets quietly wrong, and a chart that renders one anyway
-# moves the failure somewhere nobody is looking.
+# moves the failure somewhere nobody is looking. tests/refuse.sh runs both
+# kinds: the template's own refusals, and one values file per schema refusal
+# under tests/invalid/ci-cache-server/.
+#
+# Every tests/cases/ci-cache-server/<case>/values.yaml renders to
+# tests/golden/ci-cache-server/<case>.yaml. A case directory with no golden is
+# a new golden, and a golden with no case is left behind -- the diff shows
+# both.
 chart:
-    helm lint charts/ci-cache -f charts/ci-cache/testdata/values/r2.yaml
-    bash charts/ci-cache/testdata/refuse.sh
-    helm template ci-cache charts/ci-cache -f charts/ci-cache/testdata/values/aws.yaml \
-        > charts/ci-cache/testdata/golden/aws.yaml
-    helm template ci-cache charts/ci-cache -f charts/ci-cache/testdata/values/r2.yaml \
-        > charts/ci-cache/testdata/golden/r2.yaml
-    helm template ci-cache charts/ci-cache -f charts/ci-cache/testdata/values/go-only.yaml \
-        > charts/ci-cache/testdata/golden/go-only.yaml
-    helm template ci-cache charts/ci-cache -f charts/ci-cache/testdata/values/everything.yaml \
-        > charts/ci-cache/testdata/golden/everything.yaml
+    #!/usr/bin/env bash
+    set -euo pipefail
+    chart=charts/ci-cache-server
+    helm lint "$chart" -f tests/cases/ci-cache-server/r2/values.yaml
+    bash tests/refuse.sh
+    rendered=0
+    for dir in tests/cases/ci-cache-server/*/; do
+        name=$(basename "$dir")
+        helm template ci-cache "$chart" -f "$dir/values.yaml" \
+            > "tests/golden/ci-cache-server/$name.yaml"
+        rendered=$((rendered + 1))
+    done
+    # A glob that stopped matching renders nothing and diffs clean.
+    [ "$rendered" -gt 0 ] || { echo "no cases under tests/cases/ci-cache-server"; exit 1; }
     # The two estates' real shapes, rendered from the very files the deploy
     # pages show, so a documented example that no longer renders is a red mark
     # rather than somebody's afternoon.
-    helm template ci-cache charts/ci-cache -f charts/ci-cache/examples/aws-s3.yaml > /dev/null
-    helm template ci-cache charts/ci-cache -f charts/ci-cache/examples/cloudflare-r2.yaml > /dev/null
-    git diff --exit-code -- charts/ci-cache/testdata/golden
+    helm template ci-cache "$chart" -f "$chart/examples/aws-s3.yaml" > /dev/null
+    helm template ci-cache "$chart" -f "$chart/examples/cloudflare-r2.yaml" > /dev/null
+    git diff --exit-code -- tests/golden
+    # A golden for a new case is untracked, and diff is silent about those.
+    untracked=$(git ls-files --others --exclude-standard -- tests/golden)
+    if [ -n "$untracked" ]; then
+        echo "new goldens, not yet added: $untracked"
+        exit 1
+    fi
+    echo "chart: $rendered goldens match"
 
 # The docs are the contract: a behaviour not written down is not a behaviour.
 # This checks the two claims a reader depends on -- every front-end the server

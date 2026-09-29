@@ -2,7 +2,7 @@
 # account. The shape most of the estate installs.
 store:
   bucket: ci-cache-example
-  region: eu-west-1
+  region: eu-example-1
 
 serviceAccount:
   annotations:

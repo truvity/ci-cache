@@ -17,15 +17,17 @@ without one.
 
 `config/config.go` is the configuration, and it is the only one. The same
 shape is the YAML file, the flags, the environment variables
-(`CI_CACHE_<SECTION>_<NAME>`) and `charts/ci-cache/values.yaml`. Adding a
-field means adding it in all of them in the same change: two schemas for one
-server is how the chart and the binary come to describe different things,
-which they will, the moment there are two.
+(`CI_CACHE_<SECTION>_<NAME>`) and `charts/ci-cache-server/values.yaml`, with
+`values.schema.json` beside it. Adding a field means adding it in all of them
+in the same change: two schemas for one server is how the chart and the
+binary come to describe different things, which they will, the moment there
+are two. The chart's schema refuses unknown keys, so a field missing from it
+fails the render rather than being ignored.
 
-`config.Validate` and `charts/ci-cache/templates/_checks.tpl` refuse the same
-configurations. That is not duplication — the chart catches it before a
-cluster sees it, and the binary catches it when somebody runs the server by
-hand — but a rule added to one belongs in the other.
+`config.Validate` and `charts/ci-cache-server/templates/_checks.tpl` refuse
+the same configurations. That is not duplication — the chart catches it
+before a cluster sees it, and the binary catches it when somebody runs the
+server by hand — but a rule added to one belongs in the other.
 
 ## Decisions
 
@@ -58,8 +60,10 @@ CI runs as its own job, and those matter as much.
   before changing anything that hands an object between a request goroutine
   and the background writer: a race there is a corrupted entry served to
   every build afterwards, not a crash somebody notices.
-- `just chart` renders the chart four ways into `testdata/golden/` and runs
-  `testdata/refuse.sh`. The goldens are committed so that a template change
+- `just chart` renders every `tests/cases/ci-cache-server/<case>/values.yaml`
+  into `tests/golden/ci-cache-server/<case>.yaml` and runs `tests/refuse.sh`,
+  which also renders every fixture under `tests/invalid/ci-cache-server/`
+  and expects it refused. The goldens are committed so that a template change
   that alters a manifest is a diff a reviewer reads rather than a surprise in
   a cluster. The refusals matter more: each is a configuration the binary
   rejects at start-up, or accepts and then gets quietly wrong.
@@ -70,10 +74,15 @@ CI runs as its own job, and those matter as much.
 
 ## The chart
 
-`charts/ci-cache/examples/` is what the deploy pages show, and `just chart`
-renders both examples, so a documented example that no longer renders is a
-red mark rather than somebody's afternoon. Change the example and the page
-in the same commit.
+`charts/ci-cache-server/examples/` is what the deploy pages show, and `just
+chart` renders both examples, so a documented example that no longer renders
+is a red mark rather than somebody's afternoon. Change the example and the
+page in the same commit.
+
+The chart is packaged as `ci-cache-server`, but the objects it renders are
+named `ci-cache` (`ci-cache.name` in `_helpers.tpl`). Keep it that way: the
+name is in every selector and in the claim that holds the warm disk, and a
+selector cannot change in place.
 
 Two rules in the chart are worth stating because they are easy to undo:
 

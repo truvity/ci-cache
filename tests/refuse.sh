@@ -12,10 +12,11 @@
 # other reason has not held the rule, it has merely also been broken.
 set -uo pipefail
 
-chart="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$(dirname "$0")/.." && pwd)"
+chart="$root/charts/ci-cache-server"
 
 # Enough to render. Every case below breaks exactly one thing.
-base=(--set store.bucket=ci-cache-example --set store.region=eu-west-1)
+base=(--set store.bucket=ci-cache-example --set store.region=eu-example-1)
 
 fail=0
 checked=0
@@ -98,7 +99,44 @@ refuse "one port for data and admin" \
     --set service.admin=8080 \
     --set service.data=8080
 
-# 6. The NetworkPolicy, asserted positively: the admin port must appear in no
+# 6. The values files under tests/invalid/ci-cache-server/, one per refusal
+#    the SCHEMA makes (values.schema.json) rather than a template: a key the
+#    chart does not have, a value of the wrong type. Each file's first line is
+#    `# refuses: <words>`, and the words must appear in what helm says -- a
+#    fixture that fails for some other reason has proved nothing.
+invalid="$root/tests/invalid/ci-cache-server"
+fixtures=0
+for f in "$invalid"/*.yaml; do
+    [ -e "$f" ] || continue
+    fixtures=$((fixtures + 1))
+    want=$(head -1 "$f" | sed -n 's/^# refuses: //p')
+    if [ -z "$want" ]; then
+        echo "FIXTURE SAYS NOTHING: $f has no '# refuses: <words>' first line"
+        fail=1
+        continue
+    fi
+    checked=$((checked + 1))
+    out=$(helm template t "$chart" -f "$f" 2>&1)
+    if [ $? -eq 0 ]; then
+        echo "NOT REFUSED: ${f#"$root"/}"
+        fail=1
+    elif ! grep -qF -- "$want" <<< "$out"; then
+        echo "REFUSED WITHOUT SAYING WHY: ${f#"$root"/}"
+        echo "    wanted the words: $want"
+        echo "    said: $(tail -3 <<< "$out" | tr '\n' ' ')"
+        fail=1
+    else
+        echo "refused: ${f#"$root"/}"
+    fi
+done
+# A directory that emptied, or a glob that stopped matching, would otherwise
+# pass by checking nothing.
+if [ "$fixtures" -eq 0 ]; then
+    echo "NO FIXTURES under ${invalid#"$root"/}: the schema's refusals went unchecked"
+    fail=1
+fi
+
+# 7. The NetworkPolicy, asserted positively: the admin port must appear in no
 #    ingress rule, and an empty consumer list must admit nobody rather than
 #    everybody. The first cannot be written as a refusal -- a namespace name
 #    is just a string, and no rule the chart could state would recognise "the

@@ -3,7 +3,7 @@
 # be added to.
 store:
   bucket: ci-cache-example
-  region: eu-west-1
+  region: eu-example-1
   keyPrefix: shared/
 
 frontends:

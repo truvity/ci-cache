@@ -7,8 +7,8 @@ a failure that reads like a fourth problem entirely.
 Everything else is the same as on [AWS](aws-s3.md), including the values
 reference, the sizing, the legacy-prefix transition and the NetworkPolicy.
 This page is only what differs. The example it describes is
-`charts/ci-cache/examples/cloudflare-r2.yaml`, rendered by `just chart` on
-every run.
+`charts/ci-cache-server/examples/cloudflare-r2.yaml`, rendered by `just chart`
+on every run.
 
 ## The three settings
 

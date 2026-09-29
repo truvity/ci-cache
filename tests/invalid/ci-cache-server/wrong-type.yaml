@@ -1,0 +1,7 @@
+# refuses: pathStyle
+# A string where a boolean goes. "false" is a non-empty string, so a template
+# that tested it would read it as true.
+store:
+  bucket: ci-cache-example
+  region: eu-example-1
+  pathStyle: "false"

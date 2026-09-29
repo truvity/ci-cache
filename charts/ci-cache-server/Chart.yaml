@@ -1,0 +1,25 @@
+apiVersion: v2
+# The package is `ci-cache-server`, not `ci-cache`: the registry path
+# oci://ghcr.io/truvity/charts/ci-cache already holds another chart's 1.x line,
+# and a 0.x release under that name would sort below it forever. The objects
+# this chart renders are still named `ci-cache` (see _helpers.tpl), so moving
+# an installation from the old package to this one is an in-place upgrade.
+name: ci-cache-server
+description: >-
+  The ci-cache server — a disk tier over an S3-compatible bucket, serving the
+  Go build cache and the Go module proxy from one process, with an admin port
+  of its own.
+type: application
+# Placeholders: the git tag is the sole version authority. The release
+# workflow stamps both fields from the tag (truvity/ci-workflows
+# release-public.yaml), and the image tag defaults to appVersion.
+version: 0.0.0
+appVersion: 0.0.0
+home: https://github.com/truvity/ci-cache
+sources:
+  - https://github.com/truvity/ci-cache
+keywords:
+  - cache
+  - ci
+  - go
+  - s3

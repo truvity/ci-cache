@@ -24,10 +24,14 @@ jobs:
   # exactly what CI runs. `chart` is in it because the chart's refusals are
   # `helm template` and nothing more, and `leak-canary` because this
   # repository is public and a particular cannot be unpublished.
+  #
+  # `vuln` is NOT here: it runs from security.yaml, which is not a required
+  # context. An advisory published overnight must not turn every open pull
+  # request red on a finding nobody in it can act on.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@d2ee68415ccb1523a21504598dcce0e0c1e39c68 # v3.12.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
-      recipes: '["build", "test", "lint", "proto", "drift", "chart", "docs", "vuln", "leak-canary", "setup-action"]'
+      recipes: '["build", "test", "lint", "proto", "drift", "chart", "docs", "leak-canary", "setup-action"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
   # everything else builds with cgo off — which is what makes the binary
@@ -37,7 +41,7 @@ jobs:
   # corrupted entry served to every build afterwards rather than a crash
   # somebody notices.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@d2ee68415ccb1523a21504598dcce0e0c1e39c68 # v3.12.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
       recipes: '["race"]'
 
