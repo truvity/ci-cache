@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: write
       packages: write
-    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@02d66a9a2d64fe255d7703a1bebd764d0899f187 # v3.16.0
     with:
       # `ci-cache-server`, not `ci-cache`: that registry path already holds
       # another chart's 1.x line, which a 0.x release would sort below.
