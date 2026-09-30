@@ -29,11 +29,12 @@ jobs:
   # context. An advisory published overnight must not turn every open pull
   # request red on a finding nobody in it can act on.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@91c763810588ea21a5f7d34d623633230d8baff9 # v3.15.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@02d66a9a2d64fe255d7703a1bebd764d0899f187 # v3.16.0
     with:
-      # Report-only: the component contract (C1-C12) is judged and
-      # shown in the job summary, and never fails this job.
+      # Required: the component contract (C1-C13) is judged, shown in the
+      # job summary, and fails this job when a rule fails.
       policy-conformance: true
+      policy-conformance-strict: true
       recipes: '["build", "test", "lint", "proto", "drift", "chart", "docs", "leak-canary", "setup-action"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
@@ -44,7 +45,7 @@ jobs:
   # corrupted entry served to every build afterwards rather than a crash
   # somebody notices.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@91c763810588ea21a5f7d34d623633230d8baff9 # v3.15.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@02d66a9a2d64fe255d7703a1bebd764d0899f187 # v3.16.0
     with:
       recipes: '["race"]'
 
