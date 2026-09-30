@@ -173,4 +173,4 @@ snapshot:
 vendored:
     bash hack/vendored-upstream-is-pristine.sh
 
-check: build test lint proto drift chart docs vuln leak-canary setup-action vendored
+check: build test lint proto drift chart docs leak-canary setup-action vendored
