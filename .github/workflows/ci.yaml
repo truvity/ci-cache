@@ -29,7 +29,7 @@ jobs:
   # context. An advisory published overnight must not turn every open pull
   # request red on a finding nobody in it can act on.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@822f94031ee2c91b76da8d5071bfb3d1b6af27b7 # v3.19.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@30b989fdd77b99af4be1a4b04e6353aa58aa3923 # v3.21.0
     with:
       # Required: the component contract (C1-C13) is judged, shown in the
       # job summary, and fails this job when a rule fails.
@@ -45,7 +45,7 @@ jobs:
   # corrupted entry served to every build afterwards rather than a crash
   # somebody notices.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@822f94031ee2c91b76da8d5071bfb3d1b6af27b7 # v3.19.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@30b989fdd77b99af4be1a4b04e6353aa58aa3923 # v3.21.0
     with:
       recipes: '["race"]'
 
